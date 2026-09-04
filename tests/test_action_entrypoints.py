@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +17,20 @@ from salty_actions.retry import run_action as run_retry_action
 from .http_fakes import FakeResponse, RecordingOpener
 from .test_notify import workflow_event
 from .test_retry import FakeGitHubClient, workflow_run_event
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def action_command(action: str) -> str:
+    prefix = "      run: "
+    commands = [
+        line.removeprefix(prefix)
+        for line in (ROOT / action / "action.yml").read_text().splitlines()
+        if line.startswith(prefix)
+    ]
+    if len(commands) != 1:
+        raise AssertionError(f"{action}/action.yml must contain one inline run command")
+    return commands[0]
 
 
 class RetryEntrypointTests(unittest.TestCase):
@@ -68,6 +84,53 @@ class NotifyEntrypointTests(unittest.TestCase):
 
             sent_payload = json.loads(opener.requests[0].data or b"{}")
             self.assertEqual(sent_payload["embeds"][0]["title"], "Success: CI")
+
+
+class PackagedActionCommandTests(unittest.TestCase):
+    def test_retry_action_command_loads_packaged_module(self) -> None:
+        result = self._run_with_invalid_event("retry")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "::error::Retry orchestration failed: repository must be an object",
+            result.stderr,
+        )
+
+    def test_notify_action_command_loads_packaged_module(self) -> None:
+        result = self._run_with_invalid_event("notify")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "::error::Discord notification failed: repository must be an object",
+            result.stderr,
+        )
+
+    def _run_with_invalid_event(self, action: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event_path = root / "event.json"
+            event_path.write_text("{}", encoding="utf-8")
+            env = {
+                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "GITHUB_ACTION_PATH": str(ROOT / action),
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_OUTPUT": str(root / "output"),
+                "GITHUB_TOKEN": "fixture-token",
+                "NON_RETRYABLE_JOBS": "saltbox-lint",
+                "DISCORD_WEBHOOK": "https://discord.invalid/api/webhooks/fixture",
+                "TERMINAL_REASON": "",
+                "EXECUTION_ATTEMPT": "",
+            }
+            return subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", action_command(action)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
 
 
 if __name__ == "__main__":
