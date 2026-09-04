@@ -23,7 +23,9 @@ exact job names that must not be retried.
 
 The action returns `retried`, `terminal`, or `superseded` through its
 `decision` output. Terminal and orchestration-error notification remain the
-caller's responsibility.
+caller's responsibility. Read-only GitHub API requests retry transient failures
+and honor the complete server-provided rate-limit delay; the mutating rerun
+request remains single-shot and is reconciled after an ambiguous response.
 
 ### `notify`
 

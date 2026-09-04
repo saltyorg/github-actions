@@ -18,11 +18,12 @@ class GitHubClient:
         token: str,
         *,
         opener: Callable[..., Any] = urlopen,
-        sleep: Callable[[int], None] = time.sleep,
+        sleep: Callable[[float], None] = time.sleep,
+        now: Callable[[], float] = time.time,
         api_url: str = "https://api.github.com",
     ) -> None:
         self._transport = GitHubTransport(
-            token, opener=opener, sleep=sleep, api_url=api_url
+            token, opener=opener, sleep=sleep, now=now, api_url=api_url
         )
 
     def get_run_attempt(

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Callable
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 API_VERSION = "2026-03-10"
-TRANSIENT_STATUS = {429, *range(500, 600)}
+READ_ATTEMPTS = 4
+RATE_LIMIT_FALLBACK_SECONDS = 60
 
 
 class AmbiguousRequestError(RuntimeError):
@@ -21,7 +25,8 @@ class GitHubTransport:
         token: str,
         *,
         opener: Callable[..., Any] = urlopen,
-        sleep: Callable[[int], None] = time.sleep,
+        sleep: Callable[[float], None] = time.sleep,
+        now: Callable[[], float] = time.time,
         api_url: str = "https://api.github.com",
     ) -> None:
         if not token:
@@ -29,11 +34,12 @@ class GitHubTransport:
         self._token = token
         self._opener = opener
         self._sleep = sleep
+        self._now = now
         self._api_url = api_url.rstrip("/")
 
     def get_json(self, path: str) -> object:
         request = self._request(path)
-        for request_number in range(3):
+        for request_number in range(READ_ATTEMPTS):
             try:
                 with self._opener(request, timeout=30) as response:
                     if response.status != 200:
@@ -42,18 +48,19 @@ class GitHubTransport:
                         )
                     return json.loads(response.read().decode("utf-8"))
             except HTTPError as error:
-                if error.code in TRANSIENT_STATUS and request_number < 2:
-                    self._sleep(2**request_number)
+                delay = self._http_retry_delay(error, request_number)
+                if delay is not None and request_number < READ_ATTEMPTS - 1:
+                    self._sleep(delay)
                     continue
                 raise RuntimeError(
                     f"GitHub read request returned HTTP {error.code}"
                 ) from error
             except URLError as error:
-                if request_number < 2:
+                if request_number < READ_ATTEMPTS - 1:
                     self._sleep(2**request_number)
                     continue
                 raise RuntimeError(
-                    "GitHub read request failed after three attempts"
+                    "GitHub read request failed after four attempts"
                 ) from error
         raise AssertionError("unreachable")
 
@@ -92,3 +99,62 @@ class GitHubTransport:
                 "X-GitHub-Api-Version": API_VERSION,
             },
         )
+
+    def _http_retry_delay(
+        self, error: HTTPError, request_number: int
+    ) -> float | None:
+        retry_after = _retry_after_seconds(error, self._now())
+        if 500 <= error.code < 600:
+            return retry_after if retry_after is not None else 2**request_number
+        if not _is_rate_limit_error(error):
+            return None
+        if retry_after is not None:
+            return retry_after
+        reset_delay = _rate_limit_reset_seconds(error, self._now())
+        return reset_delay if reset_delay is not None else RATE_LIMIT_FALLBACK_SECONDS
+
+
+def _retry_after_seconds(error: HTTPError, now: float) -> float | None:
+    value = error.headers.get("Retry-After") if error.headers else None
+    if not value:
+        return None
+    try:
+        seconds = int(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(0, math.ceil(retry_at.timestamp() - now))
+    return seconds if seconds >= 0 else None
+
+
+def _rate_limit_reset_seconds(error: HTTPError, now: float) -> float | None:
+    value = error.headers.get("X-RateLimit-Reset") if error.headers else None
+    if not value:
+        return None
+    try:
+        reset_at = int(value)
+    except ValueError:
+        return None
+    return max(0, math.ceil(reset_at - now))
+
+
+def _is_rate_limit_error(error: HTTPError) -> bool:
+    if error.code == 429:
+        return True
+    if error.code != 403:
+        return False
+    if error.headers:
+        if error.headers.get("Retry-After"):
+            return True
+        if error.headers.get("X-RateLimit-Remaining") == "0":
+            return True
+    try:
+        payload = json.loads(error.read().decode("utf-8"))
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    message = payload.get("message") if isinstance(payload, dict) else None
+    return isinstance(message, str) and "rate limit" in message.casefold()
