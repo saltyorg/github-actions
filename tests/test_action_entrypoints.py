@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from salty_actions.notify import run_action as run_notify_action
 from salty_actions.retry import run_action as run_retry_action
 
-from .test_github import FakeResponse, RecordingOpener
+from .http_fakes import FakeResponse, RecordingOpener
 from .test_notify import workflow_event
 from .test_retry import FakeGitHubClient, workflow_run_event
 

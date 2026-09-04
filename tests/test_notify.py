@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from salty_actions.notify import build_notification, send_notification
 
-from .test_github import FakeResponse, RecordingOpener
+from .http_fakes import FakeResponse, RecordingOpener
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
 

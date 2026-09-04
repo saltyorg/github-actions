@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .github import GitHubClient
+from .transport import AmbiguousRequestError
+
 MAX_EXECUTIONS = 3
 
 
@@ -18,10 +21,6 @@ class RetryDecision:
     reason: str
     execution_attempt: int
     failed_jobs: tuple[str, ...]
-
-
-class AmbiguousRequestError(RuntimeError):
-    """Raised when a mutating request may have reached GitHub."""
 
 
 class GitHubRetryClient(Protocol):
@@ -260,8 +259,6 @@ def run_action(
 
 def main() -> int:
     try:
-        from .github import GitHubClient
-
         token = _env(os.environ, "GITHUB_TOKEN")
         run_action(os.environ, client=GitHubClient(token))
     except (OSError, TypeError, ValueError, RuntimeError) as error:
