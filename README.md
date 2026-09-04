@@ -47,4 +47,7 @@ release's full commit SHA and keep the semantic version in a comment so
 dependency automation can propose reviewed upgrades. Moving branch and major
 version references are not supported consumption contracts.
 
+Pushing a `v*` tag runs the full quality gate and publishes a GitHub Release
+with generated release notes.
+
 `retry` and `notify` form one workflow-result suite and are released together.

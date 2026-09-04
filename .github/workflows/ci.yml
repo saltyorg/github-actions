@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches:
@@ -29,7 +30,9 @@ jobs:
             --volume "$PWD:/repo:ro" \
             --workdir /repo \
             rhysd/actionlint:1.7.12 \
-            .github/workflows/ci.yml tests/actionlint/actions.yml
+            .github/workflows/ci.yml \
+            .github/workflows/release.yml \
+            tests/actionlint/actions.yml
 
       - name: Check whitespace errors
         env:
