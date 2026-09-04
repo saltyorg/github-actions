@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -v
+
+      - name: Compile Python modules
+        run: python3 -m compileall -q src
+
+      - name: Validate actions and workflows
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo:ro" \
+            --workdir /repo \
+            rhysd/actionlint:1.7.12 \
+            .github/workflows/ci.yml tests/actionlint/actions.yml
+
+      - name: Check whitespace errors
+        run: git diff --check

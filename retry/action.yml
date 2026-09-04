@@ -1,0 +1,36 @@
+name: Retry workflow run
+description: Retry failed GitHub Actions jobs with approval-aware attempt accounting
+
+inputs:
+  github-token:
+    description: Token with Actions write permission in the caller repository
+    required: true
+  non-retryable-jobs:
+    description: Newline-delimited exact job names that must fail without retry
+    required: false
+    default: ''
+
+outputs:
+  decision:
+    description: Final action decision (retried, terminal, or superseded)
+    value: ${{ steps.retry.outputs.decision }}
+  reason:
+    description: Stable reason for the decision
+    value: ${{ steps.retry.outputs.reason }}
+  execution-attempt:
+    description: Actual CI execution count after excluding an approval placeholder
+    value: ${{ steps.retry.outputs.execution-attempt }}
+  failed-jobs:
+    description: JSON array containing the failed or timed-out job names
+    value: ${{ steps.retry.outputs.failed-jobs }}
+
+runs:
+  using: composite
+  steps:
+    - name: Classify and retry workflow run
+      id: retry
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        NON_RETRYABLE_JOBS: ${{ inputs.non-retryable-jobs }}
+      run: PYTHONPATH="$GITHUB_ACTION_PATH/../src" python3 -m salty_actions.retry

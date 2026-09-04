@@ -1,0 +1,30 @@
+name: Notify workflow result
+description: Send an event-pinned GitHub Actions result to Discord
+
+inputs:
+  github-token:
+    description: Token with read permission in the caller repository
+    required: true
+  discord-webhook:
+    description: Discord webhook receiving the workflow result
+    required: true
+  terminal-reason:
+    description: Optional terminal retry-policy reason
+    required: false
+    default: ''
+  execution-attempt:
+    description: Optional approval-normalized CI execution count
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Send Discord notification
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        DISCORD_WEBHOOK: ${{ inputs.discord-webhook }}
+        TERMINAL_REASON: ${{ inputs.terminal-reason }}
+        EXECUTION_ATTEMPT: ${{ inputs.execution-attempt }}
+      run: PYTHONPATH="$GITHUB_ACTION_PATH/../src" python3 -m salty_actions.notify
