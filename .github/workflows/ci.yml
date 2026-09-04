@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Run unit tests
         run: python3 -m unittest discover -v
@@ -30,4 +32,12 @@ jobs:
             .github/workflows/ci.yml tests/actionlint/actions.yml
 
       - name: Check whitespace errors
-        run: git diff --check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          base_sha="$BASE_SHA"
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha=$(git hash-object -t tree /dev/null)
+          fi
+          git diff --check "$base_sha" HEAD
