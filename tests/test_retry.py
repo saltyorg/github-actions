@@ -233,6 +233,68 @@ class RetryCoordinatorTests(unittest.TestCase):
         self.assertEqual(result.reason, "obsolete-head")
         self.assertEqual(client.rerun_calls, [])
 
+    def test_closed_pull_request_target_is_superseded(self) -> None:
+        client = FakeGitHubClient()
+        client.pulls[42] = {
+            "number": 42,
+            "state": "closed",
+            "merged_at": None,
+            "head": {"sha": "a" * 40},
+        }
+        coordinator = RetryCoordinator(client, lambda _: None)
+
+        result = coordinator.handle(
+            workflow_run_event(
+                event="pull_request_target", pull_requests=[{"number": 42}]
+            ),
+            set(),
+        )
+
+        self.assertEqual(result.decision, "superseded")
+        self.assertEqual(result.reason, "closed-pull-request")
+        self.assertEqual(client.rerun_calls, [])
+
+    def test_obsolete_pull_request_target_commit_is_superseded(self) -> None:
+        client = FakeGitHubClient()
+        client.pulls[42] = {
+            "number": 42,
+            "state": "open",
+            "merged_at": None,
+            "head": {"sha": "b" * 40},
+        }
+        coordinator = RetryCoordinator(client, lambda _: None)
+
+        result = coordinator.handle(
+            workflow_run_event(
+                event="pull_request_target", pull_requests=[{"number": 42}]
+            ),
+            set(),
+        )
+
+        self.assertEqual(result.decision, "superseded")
+        self.assertEqual(result.reason, "obsolete-head")
+        self.assertEqual(client.rerun_calls, [])
+
+    def test_active_pull_request_target_remains_retryable(self) -> None:
+        client = FakeGitHubClient()
+        client.pulls[42] = {
+            "number": 42,
+            "state": "open",
+            "merged_at": None,
+            "head": {"sha": "a" * 40},
+        }
+        coordinator = RetryCoordinator(client, lambda _: None)
+
+        result = coordinator.handle(
+            workflow_run_event(
+                event="pull_request_target", pull_requests=[{"number": 42}]
+            ),
+            set(),
+        )
+
+        self.assertEqual(result.decision, "retried")
+        self.assertEqual(client.rerun_calls, [("saltyorg/Sandbox", 1234)])
+
     def test_newer_attempt_after_cooldown_supersedes_handler(self) -> None:
         client = FakeGitHubClient()
         client.current_runs = [

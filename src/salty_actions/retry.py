@@ -114,7 +114,7 @@ class RetryCoordinator:
         event = _string(workflow_run.get("event"), "workflow_run.event")
         head_sha = _string(workflow_run.get("head_sha"), "workflow_run.head_sha")
 
-        if event == "pull_request":
+        if event in {"pull_request", "pull_request_target"}:
             superseded_reason = self._pull_request_supersession(
                 repository, workflow_run, head_sha
             )
