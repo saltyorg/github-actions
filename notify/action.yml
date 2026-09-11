@@ -17,12 +17,32 @@ inputs:
     required: false
     default: ''
 
+  notification-artifact:
+    description: Optional artifact from the completed run containing notification.json
+    required: false
+    default: ''
+
 runs:
   using: composite
   steps:
+    - name: Download notification data
+      id: notification-data
+      if: inputs.notification-artifact != ''
+      continue-on-error: true
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        name: ${{ inputs.notification-artifact }}
+        path: ${{ runner.temp }}/salty-notify-${{ github.action }}
+        github-token: ${{ inputs.github-token }}
+        repository: ${{ github.repository }}
+        run-id: ${{ github.event.workflow_run.id }}
+
     - name: Send Discord notification
       shell: bash
       env:
+        NOTIFICATION_ARTIFACT: ${{ inputs.notification-artifact }}
+        NOTIFICATION_DOWNLOAD_OUTCOME: ${{ steps.notification-data.outcome }}
+        NOTIFICATION_DATA_PATH: ${{ steps.notification-data.outputs.download-path }}/notification.json
         GITHUB_TOKEN: ${{ inputs.github-token }}
         DISCORD_WEBHOOK: ${{ inputs.discord-webhook }}
         TERMINAL_REASON: ${{ inputs.terminal-reason }}

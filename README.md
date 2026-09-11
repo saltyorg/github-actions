@@ -40,6 +40,78 @@ falls back to that snapshot if optional GitHub enrichment is unavailable.
     discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
 ```
 
+### Optional notification details
+
+Omitting `notification-artifact` (or leaving it empty) preserves the existing
+notification payload and behavior exactly. No artifact is downloaded or read.
+
+Opt in to event details and additional fields using an artifact uploaded by the
+completed workflow. Use a separate artifact name for each run attempt and place
+`notification.json` at its root:
+
+```json
+{
+  "schema": 1,
+  "run_id": 1234,
+  "run_attempt": 1,
+  "event_details": "Upstream revision update; rebuilt libtorrent2.",
+  "fields": [
+    {
+      "name": "libtorrent2",
+      "value": "qBittorrent: 5.2.3\nlibtorrent: 2.0.14\nRevision: 4 → 5",
+      "inline": true
+    }
+  ]
+}
+```
+
+The producer must write numeric `run_id` and `run_attempt` from its own
+`github.run_id` and `github.run_attempt`. For example, upload the file in an
+artifact named `notification-${{ github.run_attempt }}`. In the notification
+workflow (triggered by `workflow_run: completed`):
+
+```yaml
+permissions:
+  actions: read
+  contents: read
+
+# Within the notification job's steps:
+# Replace the placeholder with a released commit supporting this input.
+# Existing v1.0.1 pins do not support it.
+steps:
+  - uses: saltyorg/github-actions/notify@<full-commit-sha>
+    with:
+      github-token: ${{ github.token }}
+      discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
+      notification-artifact: notification-${{ github.event.workflow_run.run_attempt }}
+```
+
+The action downloads only from the caller repository and the run identified by
+the `workflow_run` event. The JSON must match both that run ID and its attempt.
+A failed download, missing file, invalid document, or mismatched identity keeps
+the ordinary workflow result and adds `Notification details unavailable.`
+
+`event_details` and `fields` are independently optional. Event details replace
+the event field's value and label it `Event - <event>`. Fields are inserted after
+that field and before `Triggered by` and `Workflow`. Inline fields are padded to
+complete a three-column row, keeping those metadata fields on the final row in
+Discord's desktop layout. Narrow/mobile clients may stack fields. Each custom
+field has a nonempty `name` and `value`; `inline` defaults to `false`. Markdown
+links are supported. The producer determines which versions changed and includes
+arrows only for those values. The shared action has no image-specific logic.
+
+The document is limited to 64 KiB, field names to 256 characters, and values
+(including event details) to 1024 characters. The complete embed, including
+existing fields and padding, must fit Discord's 25-field and 6000-character
+limits. Invalid data is rejected as a whole; values are not silently truncated.
+Unknown properties and schema versions are rejected. Custom data cannot override
+the workflow's result, title, repository, actor, timestamp, or mention policy.
+
+Compatibility tests compare payload bytes with 224 SHA-256 baselines captured
+from unmodified v1.0.1 (`ecc6b29bd545ef923af46f8190a0ee87eed1781e`), covering
+event types, conclusions, retry metadata, and PR enrichment success/failure.
+They also exercise the send path with the input omitted and explicitly empty.
+
 ## Release policy
 
 Release tags are immutable semantic versions. Consumers must reference the

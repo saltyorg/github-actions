@@ -255,6 +255,21 @@ def run_action(
         github=github,
         now=now,
     )
+    if env.get("NOTIFICATION_ARTIFACT", "").strip():
+        from .notification_data import apply_notification_data
+
+        try:
+            if env.get("NOTIFICATION_DOWNLOAD_OUTCOME") != "success":
+                raise ValueError("notification artifact download failed")
+            notification = apply_notification_data(
+                notification,
+                Path(_env(env, "NOTIFICATION_DATA_PATH")),
+                _mapping(payload.get("workflow_run"), "workflow_run"),
+            )
+        except (OSError, TypeError, ValueError, KeyError, RecursionError):
+            # Keep the authoritative result even if optional enrichment fails.
+            notification["embeds"][0]["description"] += "\nNotification details unavailable."
+            print("::warning::Notification details unavailable; sending workflow result.")
     send_notification(_env(env, "DISCORD_WEBHOOK"), notification, opener=opener)
     print("Discord notification sent successfully")
 

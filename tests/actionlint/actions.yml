@@ -24,3 +24,9 @@ jobs:
           discord-webhook: https://discord.invalid/api/webhooks/fixture
           terminal-reason: ${{ steps.retry.outputs.reason }}
           execution-attempt: ${{ steps.retry.outputs.execution-attempt }}
+
+      - uses: ./notify
+        with:
+          github-token: fixture-token
+          discord-webhook: https://discord.invalid/api/webhooks/fixture
+          notification-artifact: notification-1
