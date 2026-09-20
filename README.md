@@ -41,6 +41,11 @@ reportable, including when no jobs ran.
 Sends the completed workflow run from the caller's `workflow_run` event to a
 Discord webhook. It uses the event snapshot as its authoritative input and
 falls back to that snapshot if optional GitHub enrichment is unavailable.
+When a PR association is absent from both the event and commit lookup, the
+notifier uses the same verified source-repository, branch, and creation-time
+lookup as `retry`. Ambiguous identities keep the generic event description;
+they never select an arbitrary PR. Existing notification layout and optional
+artifact handling are unchanged.
 
 ```yaml
 - uses: saltyorg/github-actions/notify@<full-commit-sha> # v1.0.0

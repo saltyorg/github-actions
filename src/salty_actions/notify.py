@@ -10,10 +10,12 @@ from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .pull_requests import BranchPullClient, resolve_branch_pull
+
 DISCORD_FIELD_VALUE_LIMIT = 1024
 
 
-class PullRequestEnricher(Protocol):
+class PullRequestEnricher(BranchPullClient, Protocol):
     def list_commit_pulls(
         self, repository: str, head_sha: str
     ) -> list[dict[str, object]]: ...
@@ -122,23 +124,29 @@ def _event_field(
     head_sha = str(workflow_run.get("head_sha") or "")
 
     if event in {"pull_request", "pull_request_target"}:
+        event_pulls = workflow_run.get("pull_requests")
+        ambiguous_event = isinstance(event_pulls, list) and len(event_pulls) > 1
         number = _pull_request_number(workflow_run)
         title = ""
         url = f"https://github.com/{repository}/pull/{number}" if number else ""
-        if github is not None and len(head_sha) == 40:
+        if github is not None and len(head_sha) == 40 and not ambiguous_event:
             try:
                 pull_requests = github.list_commit_pulls(repository, head_sha)
-                selected = next(
-                    (
-                        item
-                        for item in pull_requests
-                        if number is None or item.get("number") == number
-                    ),
-                    None,
-                )
+                candidates = [
+                    item
+                    for item in pull_requests
+                    if number is None or item.get("number") == number
+                ]
+                selected = candidates[0] if len(candidates) == 1 else None
+                if not pull_requests and number is None:
+                    selected = resolve_branch_pull(github, repository, workflow_run)
                 if selected:
                     selected_number = selected.get("number")
-                    if isinstance(selected_number, int):
+                    if (
+                        isinstance(selected_number, int)
+                        and not isinstance(selected_number, bool)
+                        and selected_number > 0
+                    ):
                         number = selected_number
                     title = str(selected.get("title") or "")
                     url = str(
@@ -183,13 +191,17 @@ def _event_field(
 
 def _pull_request_number(workflow_run: Mapping[str, object]) -> int | None:
     pull_requests = workflow_run.get("pull_requests")
-    if not isinstance(pull_requests, list) or not pull_requests:
+    if not isinstance(pull_requests, list) or len(pull_requests) != 1:
         return None
     first = pull_requests[0]
     if not isinstance(first, Mapping):
         return None
     number = first.get("number")
-    return number if isinstance(number, int) and not isinstance(number, bool) else None
+    return (
+        number
+        if isinstance(number, int) and not isinstance(number, bool) and number > 0
+        else None
+    )
 
 
 def _discord_color(conclusion: str) -> int:

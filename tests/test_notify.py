@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import unittest
@@ -12,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from salty_actions.notify import build_notification, send_notification
 
 from .http_fakes import FakeResponse, RecordingOpener
+from .test_retry import FakeGitHubClient
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
 
@@ -138,6 +140,97 @@ class NotificationPayloadTests(unittest.TestCase):
         self.assertEqual(event_field["name"], "Event - push")
         self.assertIn("fix(example): correct behavior", event_field["value"])
         self.assertIn("/commit/" + "a" * 40, event_field["value"])
+
+
+class NotificationBranchResolutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.event = workflow_event(event="pull_request")
+        self.event["workflow_run"].update(
+            head_repository={"id": 123, "full_name": "contributor/Sandbox"},
+            created_at="2026-09-04T12:00:00Z",
+        )
+        self.client = FakeGitHubClient()
+        pull = {
+            "number": 538,
+            "title": "feat(role): add silo",
+            "html_url": "https://github.com/saltyorg/Sandbox/pull/538",
+            "state": "open",
+            "created_at": "2026-09-03T12:00:00Z",
+            "closed_at": None,
+            "merged_at": None,
+            "head": {
+                "sha": "a" * 40,
+                "ref": "feature/example",
+                "repo": {"id": 123, "full_name": "contributor/Sandbox"},
+            },
+            "base": {"repo": {"full_name": "saltyorg/Sandbox"}},
+        }
+        self.client.branch_pulls = [pull]
+        self.client.pulls[538] = copy.deepcopy(pull)
+
+    def event_value(self) -> str:
+        notification = build_notification(self.event, github=self.client, now=NOW)
+        return notification["embeds"][0]["fields"][2]["value"]
+
+    def test_missing_event_and_commit_associations_resolve_from_branch(self) -> None:
+        self.assertEqual(
+            self.event_value(),
+            "[#538](https://github.com/saltyorg/Sandbox/pull/538) feat(role): add silo",
+        )
+        self.assertEqual(
+            self.client.branch_pull_calls,
+            [("saltyorg/Sandbox", "contributor/Sandbox", "feature/example")],
+        )
+
+    def test_ambiguous_event_associations_do_not_select_first_pr(self) -> None:
+        self.event["workflow_run"]["pull_requests"] = [
+            {"number": 538},
+            {"number": 539},
+        ]
+        self.client.commit_pulls = [self.client.pulls[538]]
+
+        self.assertEqual(self.event_value(), "Pull request event on feature/example")
+        self.assertEqual(self.client.branch_pull_calls, [])
+
+    def test_ambiguous_commit_associations_do_not_select_first_pr(self) -> None:
+        other = copy.deepcopy(self.client.pulls[538])
+        other["number"] = 539
+        self.client.commit_pulls = [self.client.pulls[538], other]
+
+        self.assertEqual(self.event_value(), "Pull request event on feature/example")
+        self.assertEqual(self.client.branch_pull_calls, [])
+
+    def test_ambiguous_branch_associations_keep_event_fallback(self) -> None:
+        other = copy.deepcopy(self.client.branch_pulls[0])
+        other["number"] = 539
+        self.client.branch_pulls.append(other)
+
+        self.assertEqual(self.event_value(), "Pull request event on feature/example")
+
+    def test_branch_api_error_keeps_authoritative_notification(self) -> None:
+        self.client.branch_pull_error = RuntimeError("GitHub read request failed")
+
+        notification = build_notification(self.event, github=self.client, now=NOW)
+
+        self.assertEqual(notification["embeds"][0]["title"], "Failure: CI")
+        self.assertEqual(
+            notification["embeds"][0]["fields"][2]["value"],
+            "Pull request event on feature/example",
+        )
+
+    def test_target_event_does_not_use_base_branch_as_source_pr(self) -> None:
+        self.event["workflow_run"]["event"] = "pull_request_target"
+
+        self.assertEqual(self.event_value(), "Pull request event on feature/example")
+        self.assertEqual(self.client.branch_pull_calls, [])
+
+    def test_existing_event_number_is_preserved_without_branch_lookup(self) -> None:
+        self.event["workflow_run"]["pull_requests"] = [{"number": 538}]
+
+        self.assertEqual(
+            self.event_value(), "[#538](https://github.com/saltyorg/Sandbox/pull/538)"
+        )
+        self.assertEqual(self.client.branch_pull_calls, [])
 
 
 class DiscordDeliveryTests(unittest.TestCase):
