@@ -112,6 +112,44 @@ from unmodified v1.0.1 (`ecc6b29bd545ef923af46f8190a0ee87eed1781e`), covering
 event types, conclusions, retry metadata, and PR enrichment success/failure.
 They also exercise the send path with the input omitted and explicitly empty.
 
+### `saltbox-lint`
+
+Checks Saltbox and Sandbox YAML using a checksum-verified, exact stable
+`saltyorg/saltbox-lint` release. Pin the shared Action to a reviewed full commit
+SHA and pin the linter binary separately with `version`:
+
+```yaml
+- uses: saltyorg/github-actions/saltbox-lint@<full-commit-sha>
+  with:
+    version: v1.2.3
+    working-directory: .
+    paths: |
+      roles/saltbox/tasks/main.yml
+      roles/sandbox/tasks/main.yml
+```
+
+`version` is required and accepts only an exact stable tag such as `v1.2.3`.
+`working-directory` defaults to `.` relative to `GITHUB_WORKSPACE`. `paths`
+defaults to `.` and contains one literal file or directory path per line,
+resolved from that working directory. Empty lines are ignored. Path text is
+never interpreted as a shell command or a linter option; the Action never
+enables fixes implicitly.
+
+The Action requires a Linux X64 or ARM64 runner with Bash, `curl`, `awk`,
+`sha256sum`, `tar`, and standard core utilities. In normal use it downloads
+only from `saltyorg/saltbox-lint` GitHub releases, verifies the archive checksum
+and binary version, then runs `saltbox-lint check --format github`. It has no
+caller-facing outputs;
+findings appear as GitHub annotations and a step summary. Exit code `0` means
+no findings, `1` means findings, and `2` means an operational or input error.
+
+The default shared-repository tests use a local HTTP release fixture and an
+argv-recording executable to test the installer and wrapper independently of
+the linter repository or an unpublished release. To also exercise real linter
+findings, annotations, summary, and source preservation, set
+`SALTBOX_LINT_TEST_BINARY` to a local executable that reports
+`saltbox-lint version 1.2.3`, then run `python3 -m unittest discover -v`.
+
 ## Release policy
 
 Release tags are immutable semantic versions. Consumers must reference the

@@ -30,3 +30,11 @@ jobs:
           github-token: fixture-token
           discord-webhook: https://discord.invalid/api/webhooks/fixture
           notification-artifact: notification-1
+
+      - uses: ./saltbox-lint
+        with:
+          version: v1.2.3
+          working-directory: .
+          paths: |
+            roles/saltbox/tasks/main.yml
+            roles/sandbox/tasks/main.yml

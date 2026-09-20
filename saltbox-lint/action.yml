@@ -1,0 +1,33 @@
+name: Saltbox Lint
+description: Check Saltbox and Sandbox YAML with an exact, checksum-verified release.
+author: saltyorg
+inputs:
+  version:
+    description: Exact stable release tag (for example v1.2.3); latest and ranges are unsupported.
+    required: true
+  working-directory:
+    description: Directory relative to GITHUB_WORKSPACE in which paths are resolved.
+    required: false
+    default: '.'
+  paths:
+    description: Newline-separated literal file or directory paths (one per line).
+    required: false
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - name: Install Saltbox Lint
+      id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/install.sh"
+    - name: Check sources
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        SALTBOX_LINT_BINARY: ${{ steps.install.outputs.binary }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/run.sh"

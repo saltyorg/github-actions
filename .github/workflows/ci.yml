@@ -24,6 +24,9 @@ jobs:
       - name: Compile Python modules
         run: python3 -m compileall -q src
 
+      - name: Check Bash syntax
+        run: bash -n saltbox-lint/install.sh saltbox-lint/run.sh
+
       - name: Validate actions and workflows
         run: |
           docker run --rm \
