@@ -15,6 +15,70 @@ from .http_fakes import FakeResponse, RecordingOpener
 
 
 class GitHubClientTests(unittest.TestCase):
+    def test_branch_pulls_include_closed_prs_and_paginate_encoded_head(self) -> None:
+        first_page = [{"number": number} for number in range(1, 101)]
+        opener = RecordingOpener(
+            [FakeResponse(200, first_page), FakeResponse(200, [{"number": 515}])]
+        )
+        client = GitHubClient("fixture-token", opener=opener)
+
+        pulls = client.list_branch_pulls(
+            "saltyorg/Saltbox", "balogan/Saltbox", "fix/sqlite+wal&journals"
+        )
+
+        self.assertEqual(len(pulls), 101)
+        self.assertEqual(pulls[-1], {"number": 515})
+        self.assertEqual(
+            [request.full_url for request in opener.requests],
+            [
+                "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
+                "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
+                "&per_page=100&page=1",
+                "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
+                "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
+                "&per_page=100&page=2",
+            ],
+        )
+
+    def test_branch_pulls_accept_an_empty_result(self) -> None:
+        opener = RecordingOpener([FakeResponse(200, [])])
+        client = GitHubClient("fixture-token", opener=opener)
+
+        self.assertEqual(
+            client.list_branch_pulls("saltyorg/Saltbox", "balogan/Saltbox", "fix"),
+            [],
+        )
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_branch_pulls_reject_invalid_inputs_before_request(self) -> None:
+        for target, source, branch in [
+            ("saltyorg/Saltbox/extra", "balogan/Saltbox", "fix"),
+            ("saltyorg/Saltbox", "balogan/Saltbox/extra", "fix"),
+            ("saltyorg/Saltbox", "balogan/Saltbox", ""),
+            ("saltyorg/Saltbox", "balogan/Saltbox", None),
+        ]:
+            with self.subTest(target=target, source=source, branch=branch):
+                opener = RecordingOpener([])
+                client = GitHubClient("fixture-token", opener=opener)
+
+                with self.assertRaises(ValueError):
+                    client.list_branch_pulls(target, source, branch)
+
+                self.assertEqual(opener.requests, [])
+
+    def test_branch_pulls_reject_malformed_responses(self) -> None:
+        for payload in ({"pulls": []}, [None]):
+            with self.subTest(payload=payload):
+                client = GitHubClient(
+                    "fixture-token",
+                    opener=RecordingOpener([FakeResponse(200, payload)]),
+                )
+
+                with self.assertRaises(TypeError):
+                    client.list_branch_pulls(
+                        "saltyorg/Saltbox", "balogan/Saltbox", "fix"
+                    )
+
     def test_attempt_jobs_are_paginated_without_falling_back_to_latest(self) -> None:
         first_page = [
             {"name": f"job-{index}", "conclusion": "success"} for index in range(100)

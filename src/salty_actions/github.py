@@ -91,6 +91,33 @@ class GitHubClient:
             self._transport.get_json(f"/repos/{repository}/pulls/{number}")
         )
 
+    def list_branch_pulls(
+        self, repository: str, head_repository: str, head_branch: str
+    ) -> list[dict[str, object]]:
+        self._validate(repository, 1)
+        self._validate(head_repository, 1)
+        if not isinstance(head_branch, str) or not head_branch:
+            raise ValueError("head branch must be a non-empty string")
+        head_owner = head_repository.split("/", 1)[0]
+        pulls: list[dict[str, object]] = []
+        page = 1
+        while True:
+            query = urlencode(
+                {
+                    "state": "all",
+                    "head": f"{head_owner}:{head_branch}",
+                    "per_page": 100,
+                    "page": page,
+                }
+            )
+            result = self._transport.get_json(f"/repos/{repository}/pulls?{query}")
+            if not isinstance(result, list):
+                raise TypeError("GitHub branch pulls response was not an array")
+            pulls.extend(_object(item) for item in result)
+            if len(result) < 100:
+                return pulls
+            page += 1
+
     def rerun_failed_jobs(self, repository: str, run_id: int) -> None:
         self._validate(repository, run_id)
         self._transport.post_mutation(

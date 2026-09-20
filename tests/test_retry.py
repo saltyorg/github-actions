@@ -48,6 +48,9 @@ class FakeGitHubClient:
             {"run_attempt": 1, "status": "completed", "conclusion": "failure"}
         ]
         self.commit_pulls: list[dict[str, object]] = []
+        self.branch_pulls: list[dict[str, object]] = []
+        self.branch_pull_calls: list[tuple[str, str, str]] = []
+        self.branch_pull_error: Exception | None = None
         self.pulls: dict[int, dict[str, object]] = {}
         self.rerun_calls: list[tuple[str, int]] = []
         self.rerun_error: Exception | None = None
@@ -74,6 +77,14 @@ class FakeGitHubClient:
 
     def get_pull(self, repository: str, number: int) -> dict[str, object]:
         return self.pulls[number]
+
+    def list_branch_pulls(
+        self, repository: str, head_repository: str, head_branch: str
+    ) -> list[dict[str, object]]:
+        self.branch_pull_calls.append((repository, head_repository, head_branch))
+        if self.branch_pull_error:
+            raise self.branch_pull_error
+        return self.branch_pulls
 
     def rerun_failed_jobs(self, repository: str, run_id: int) -> None:
         self.rerun_calls.append((repository, run_id))

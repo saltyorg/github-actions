@@ -8,15 +8,21 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import urlparse
+from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from salty_actions.github import GitHubClient
 from salty_actions.notify import run_action as run_notify_action
+from salty_actions.retry import main as retry_main
 from salty_actions.retry import run_action as run_retry_action
 
 from .http_fakes import FakeResponse, RecordingOpener
 from .test_notify import workflow_event
 from .test_retry import FakeGitHubClient, workflow_run_event
+from .test_retry_branch_resolution import branch_pull, expired_approval_event
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,6 +40,56 @@ def action_command(action: str) -> str:
 
 
 class RetryEntrypointTests(unittest.TestCase):
+    def test_orphaned_merged_pr_exits_successfully_with_superseded_outputs(self) -> None:
+        requests: list[Request] = []
+        responses = {
+            (
+                "/repos/saltyorg/Saltbox/commits/"
+                "d30a4cf3b23532f8588c7af043120df75bf7479d/pulls"
+            ): [],
+            "/repos/saltyorg/Saltbox/pulls": [branch_pull()],
+            "/repos/saltyorg/Saltbox/pulls/515": branch_pull(),
+            "/repos/saltyorg/Saltbox/actions/runs/32403149082/attempts/1/jobs": {
+                "total_count": 0,
+                "jobs": [],
+            },
+        }
+
+        def open_fixture(request: Request, timeout: int) -> FakeResponse:
+            requests.append(request)
+            return FakeResponse(200, responses[urlparse(request.full_url).path])
+
+        client = GitHubClient("fixture-token", opener=open_fixture)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event_path = root / "event.json"
+            output_path = root / "output"
+            event_path.write_text(
+                json.dumps(expired_approval_event()), encoding="utf-8"
+            )
+            env = {
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_OUTPUT": str(output_path),
+                "GITHUB_TOKEN": "fixture-token",
+                "NON_RETRYABLE_JOBS": "ansible-lint\nsaltbox-lint",
+            }
+
+            with patch.dict(os.environ, env, clear=True), patch(
+                "salty_actions.retry.GitHubClient", return_value=client
+            ):
+                self.assertEqual(retry_main(), 0)
+
+            self.assertEqual(
+                output_path.read_text(encoding="utf-8").splitlines(),
+                [
+                    "decision=superseded",
+                    "reason=closed-pull-request",
+                    "execution-attempt=1",
+                    "failed-jobs=[]",
+                ],
+            )
+            self.assertEqual([request.method for request in requests], ["GET"] * 3)
+
     def test_action_writes_safe_terminal_outputs(self) -> None:
         client = FakeGitHubClient()
         client.jobs = [{"name": "saltbox-lint", "conclusion": "failure"}]

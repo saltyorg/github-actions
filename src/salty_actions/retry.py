@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from .github import GitHubClient
+from .github import REPOSITORY_RE, GitHubClient
 from .transport import AmbiguousRequestError
 
 MAX_EXECUTIONS = 3
@@ -39,6 +41,10 @@ class GitHubRetryClient(Protocol):
     ) -> list[dict[str, object]]: ...
 
     def get_pull(self, repository: str, number: int) -> dict[str, object]: ...
+
+    def list_branch_pulls(
+        self, repository: str, head_repository: str, head_branch: str
+    ) -> list[dict[str, object]]: ...
 
     def rerun_failed_jobs(self, repository: str, run_id: int) -> None: ...
 
@@ -189,12 +195,19 @@ class RetryCoordinator:
         candidates = pull_requests if isinstance(pull_requests, list) else []
         if not candidates:
             candidates = self.client.list_commit_pulls(repository, head_sha)
-        if len(candidates) != 1:
+        if candidates:
+            if len(candidates) != 1:
+                return None
+            candidate = _mapping(candidates[0], "workflow_run.pull_requests[0]")
+            number = _integer(candidate.get("number"), "pull_request.number")
+            pull_request = self.client.get_pull(repository, number)
+        elif workflow_run.get("event") == "pull_request":
+            pull_request = self._branch_pull(repository, workflow_run)
+            if pull_request is None:
+                return None
+        else:
             return None
 
-        candidate = _mapping(candidates[0], "workflow_run.pull_requests[0]")
-        number = _integer(candidate.get("number"), "pull_request.number")
-        pull_request = self.client.get_pull(repository, number)
         if pull_request.get("state") == "closed" or pull_request.get("merged_at"):
             return "closed-pull-request"
 
@@ -203,11 +216,113 @@ class RetryCoordinator:
             return "obsolete-head"
         return None
 
+    def _branch_pull(
+        self, repository: str, workflow_run: Mapping[str, object]
+    ) -> dict[str, object] | None:
+        source = workflow_run.get("head_repository")
+        if not isinstance(source, Mapping):
+            return None
+        source_name = source.get("full_name")
+        source_id = source.get("id")
+        branch = workflow_run.get("head_branch")
+        created_at = _timestamp(workflow_run.get("created_at"))
+        if (
+            not isinstance(source_name, str)
+            or not REPOSITORY_RE.fullmatch(source_name)
+            or not isinstance(source_id, int)
+            or isinstance(source_id, bool)
+            or source_id < 1
+            or not isinstance(branch, str)
+            or not branch
+            or created_at is None
+        ):
+            return None
+
+        def matches(pull: Mapping[str, object]) -> bool | None:
+            """Return None when incomplete metadata leaves identity uncertain."""
+            number = pull.get("number")
+            state = pull.get("state")
+            if (
+                not isinstance(number, int)
+                or isinstance(number, bool)
+                or number < 1
+                or state not in ("open", "closed")
+            ):
+                return None
+            head = pull.get("head")
+            base = pull.get("base")
+            if not isinstance(head, Mapping) or not isinstance(base, Mapping):
+                return None
+            head_repo = head.get("repo")
+            base_repo = base.get("repo")
+            if not isinstance(head_repo, Mapping) or not isinstance(base_repo, Mapping):
+                return None
+            target_name = base_repo.get("full_name")
+            head_sha = head.get("sha")
+            if (
+                not isinstance(head_repo.get("id"), int)
+                or isinstance(head_repo.get("id"), bool)
+                or not isinstance(head.get("ref"), str)
+                or not head.get("ref")
+                or not isinstance(target_name, str)
+                or not REPOSITORY_RE.fullmatch(target_name)
+            ):
+                return None
+            if (
+                head_repo.get("id") != source_id
+                or head.get("ref") != branch
+                or target_name.casefold() != repository.casefold()
+            ):
+                return False
+            if not isinstance(head_sha, str) or not re.fullmatch(
+                r"[0-9a-fA-F]{40}", head_sha
+            ):
+                return None
+            opened_at = _timestamp(pull.get("created_at"))
+            if opened_at is None:
+                return None
+            if opened_at > created_at:
+                return False
+            # A reused branch may have older, already-closed PRs. Match the
+            # original run creation time, not its much later completion time.
+            if pull.get("closed_at") is not None:
+                closed_at = _timestamp(pull["closed_at"])
+                if closed_at is None:
+                    return None
+                if closed_at < created_at:
+                    return False
+            elif state == "closed":
+                return None
+            return True
+
+        candidates = []
+        for pull in self.client.list_branch_pulls(repository, source_name, branch):
+            match = matches(pull)
+            if match is None:
+                return None
+            if match:
+                candidates.append(pull)
+        if len(candidates) != 1:
+            return None
+        number = _integer(candidates[0].get("number"), "pull_request.number")
+        pull = self.client.get_pull(repository, number)
+        return pull if pull.get("number") == number and matches(pull) is True else None
+
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{name} must be an object")
     return value
+
+
+def _timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return timestamp if timestamp.tzinfo is not None else None
 
 
 def _string(value: object, name: str) -> str:

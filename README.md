@@ -27,6 +27,15 @@ caller's responsibility. Read-only GitHub API requests retry transient failures
 and honor the complete server-provided rate-limit delay; the mutating rerun
 request remains single-shot and is reconciled after an ambiguous response.
 
+Closed or superseded pull requests return `superseded` so callers can skip retry
+and notification. If a `pull_request` run has no PR references and its old commit
+is no longer associated with a PR, the action looks up the original source
+repository and branch. It uses the run's creation time to distinguish reused
+branches and requires a single matching PR before suppressing the result.
+Missing or ambiguous metadata keeps normal failure handling; API errors remain
+orchestration errors. An expired approval for a current, open PR is still
+reportable, including when no jobs ran.
+
 ### `notify`
 
 Sends the completed workflow run from the caller's `workflow_run` event to a
