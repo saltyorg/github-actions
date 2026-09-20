@@ -25,7 +25,9 @@ jobs:
         run: python3 -m compileall -q src
 
       - name: Check Bash syntax
-        run: bash -n saltbox-lint/install.sh saltbox-lint/run.sh
+        run: |
+          bash -n saltbox-lint/install.sh
+          bash -n saltbox-lint/run.sh
 
       - name: Validate actions and workflows
         run: |
