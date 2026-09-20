@@ -128,6 +128,11 @@ SHA and pin the linter binary separately with `version`:
       roles/sandbox/tasks/main.yml
 ```
 
+The [Action metadata](https://github.com/saltyorg/saltbox-lint/blob/a75b1590d1755e5512ea6ba9fb3bec0d0aa6569a/action.yml)
+and [Bash scripts](https://github.com/saltyorg/saltbox-lint/tree/a75b1590d1755e5512ea6ba9fb3bec0d0aa6569a/action)
+were ported from `saltyorg/saltbox-lint` under [GPLv3](https://github.com/saltyorg/saltbox-lint/blob/a75b1590d1755e5512ea6ba9fb3bec0d0aa6569a/LICENSE);
+the license text is also in this repository's [LICENSE.md](LICENSE.md).
+
 `version` is required and accepts only an exact stable tag such as `v1.2.3`.
 `working-directory` defaults to `.` relative to `GITHUB_WORKSPACE`. `paths`
 defaults to `.` and contains one literal file or directory path per line,
