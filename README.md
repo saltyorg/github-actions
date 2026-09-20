@@ -4,6 +4,9 @@ Shared, versioned GitHub Actions used by Saltyorg repositories.
 
 ## Actions
 
+The examples below use `v1.1.0`. The branch-based PR lookup and `saltbox-lint`
+action described below are not included in that release.
+
 ### `retry`
 
 Retries failed or timed-out jobs up to three actual CI executions. A fork
@@ -13,7 +16,7 @@ exact job names that must not be retried.
 
 ```yaml
 - id: retry
-  uses: saltyorg/github-actions/retry@<full-commit-sha> # v1.0.0
+  uses: saltyorg/github-actions/retry@v1.1.0
   with:
     github-token: ${{ github.token }}
     non-retryable-jobs: |
@@ -48,7 +51,7 @@ they never select an arbitrary PR. Existing notification layout and optional
 artifact handling are unchanged.
 
 ```yaml
-- uses: saltyorg/github-actions/notify@<full-commit-sha> # v1.0.0
+- uses: saltyorg/github-actions/notify@v1.1.0
   with:
     github-token: ${{ github.token }}
     discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -90,10 +93,9 @@ permissions:
   contents: read
 
 # Within the notification job's steps:
-# Replace the placeholder with a released commit supporting this input.
-# Existing v1.0.1 pins do not support it.
+# The published v1.1.0 release supports notification-artifact.
 steps:
-  - uses: saltyorg/github-actions/notify@<full-commit-sha>
+  - uses: saltyorg/github-actions/notify@v1.1.0
     with:
       github-token: ${{ github.token }}
       discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -129,11 +131,13 @@ They also exercise the send path with the input omitted and explicitly empty.
 ### `saltbox-lint`
 
 Checks Saltbox and Sandbox YAML using a checksum-verified, exact stable
-`saltyorg/saltbox-lint` release. Pin the shared Action to a reviewed full commit
-SHA and pin the linter binary separately with `version`:
+`saltyorg/saltbox-lint` release. Select the linter binary with `version`.
+This action is absent from shared-actions `v1.1.0`.
+
+The following example runs the action locally from a checkout of this repository:
 
 ```yaml
-- uses: saltyorg/github-actions/saltbox-lint@<full-commit-sha>
+- uses: ./saltbox-lint
   with:
     version: v1.2.3
     working-directory: .
@@ -171,12 +175,12 @@ findings, annotations, summary, and source preservation, set
 
 ## Release policy
 
-Release tags are immutable semantic versions. Consumers must reference the
-release's full commit SHA and keep the semantic version in a comment so
-dependency automation can propose reviewed upgrades. Moving branch and major
-version references are not supported consumption contracts.
+Release tags are immutable semantic versions.
 
 Pushing a `v*` tag runs the full quality gate and publishes a GitHub Release
-with generated release notes.
+with generated release notes. An explicitly authorized release is complete
+only after the agreed commit passes required validation, the agreed tag is
+pushed, and its remote target and successful release publication are verified.
+A local tag, a commit on `main`, or a planned version is not a published release.
 
 `retry` and `notify` form one workflow-result suite and are released together.
