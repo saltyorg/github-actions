@@ -217,6 +217,34 @@ class RetryTests(unittest.TestCase):
 
 
 class ScanTests(unittest.TestCase):
+    def test_code_scanning_export_bounds_locations_and_keeps_full_raw_report(self):
+        def runner(command, **kwargs):
+            if command[:3] == ["docker", "image", "inspect"]:
+                return json.dumps({"Id": IMAGE_ID, "Os": "linux", "Architecture": "amd64"})
+            if command[0] in {"trivy", "docker-scout"}:
+                path = Path(command[command.index("--output") + 1])
+                if command[0] == "trivy":
+                    payload = trivy_report()
+                else:
+                    payload = scout_report(clean="--only-cisa-kev" in command)
+                    if payload["runs"][0]["results"]:
+                        result = payload["runs"][0]["results"][0]
+                        result["locations"] = [{"physicalLocation": {"artifactLocation": {
+                            "uri": f"/package/file-{index}"}}} for index in range(1269)]
+                path.write_text(json.dumps(payload))
+            return ""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            report = scan(TARGET, "published", output, runner=runner,
+                          installer=lambda name, *args: Path("trivy" if name == "trivy" else "docker-scout"))
+            raw = json.loads((output / "scout.sarif").read_text())
+            compatible = json.loads((output / "scout-code-scanning.sarif").read_text())
+            self.assertEqual(len(raw["runs"][0]["results"][0]["locations"]), 1269)
+            self.assertEqual(len(compatible["runs"][0]["results"][0]["locations"]), 1)
+            self.assertEqual(raw["runs"][0]["tool"], compatible["runs"][0]["tool"])
+            self.assertEqual(scout_findings(raw), scout_findings(compatible))
+            self.assertEqual(report["report_status"], "complete")
+
     def run_scan(self, *, failed=(), kev=False):
         def runner(command, **kwargs):
             if command[:3] == ["docker", "image", "inspect"]:

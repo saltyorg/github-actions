@@ -183,7 +183,8 @@ release when adopting them; Renovate manages subsequent version updates.
 checksum-verified Trivy and Docker Scout releases against those same bytes.
 Python installs and invokes the scanners, normalizes their structured reports,
 and writes `report.json`, raw Trivy JSON, raw Scout/KEV SARIF, and a combined
-`findings.sarif`. All scanner severities remain in the raw reports; ordinary
+`findings.sarif`. It also writes `scout-code-scanning.sarif` with bounded file
+locations for GitHub ingestion. All scanner severities remain in the raw reports; ordinary
 HIGH/CRITICAL findings and KEV findings enter the normalized report.
 
 ```yaml
@@ -289,9 +290,11 @@ completed operations remain in the result if a later operation fails.
 
 The aggregate JSON, `report-path` and `report-status` outputs, and job summary
 show proposed/applied operations and assessment errors. Upload reports with
-`if: always()` so failures retain evidence. Raw Scout SARIF is available for
-Code Scanning upload; it retains the scanner's package locations and fixed-version
-properties. Automated upgrades continue to own remediation; this tool does not
+`if: always()` so failures retain evidence. Use `scout-code-scanning.sarif` for
+Code Scanning uploads. It retains every finding, package and fixed-version
+property, and the primary file location. GitHub displays only the primary location,
+and Scout's full package file lists can exceed ingestion limits. The original
+`scout.sarif` remains unchanged as an artifact. Automated upgrades continue to own remediation; this tool does not
 alter locks, dispatch upgrades, or verify repository availability of fixes.
 
 ## Release policy

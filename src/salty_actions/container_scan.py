@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 from .container_findings import obj, scout_findings, text, trivy_findings
 from .container_tools import CommandRunner, OperationError, install_tool, safe_error
+from .container_sarif import code_scanning_report
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 PLATFORM = re.compile(r"linux/(?:amd64|arm64(?:/v8)?|arm/v7)\Z")
@@ -136,6 +137,9 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
                         payload = json.loads(destination.read_text())
                         findings = trivy_findings(payload) if engine == "trivy" else scout_findings(
                             payload, kev=mode == "kev")
+                        if mode == "scout":
+                            compatible = output / "scout-code-scanning.sarif"
+                            compatible.write_text(json.dumps(code_scanning_report(payload), indent=2) + "\n")
                         report["findings"].extend(findings)
                         report["scanners"][mode] = "complete"
                         if mode == "kev":
