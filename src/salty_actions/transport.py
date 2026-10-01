@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+import ssl
 import time
+from http.client import IncompleteRead
 from collections.abc import Callable
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -55,12 +57,59 @@ class GitHubTransport:
                 raise RuntimeError(
                     f"GitHub read request returned HTTP {error.code}"
                 ) from error
-            except URLError as error:
+            except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
+                if isinstance(error, URLError) and isinstance(error.reason, ssl.SSLCertVerificationError):
+                    raise RuntimeError("GitHub TLS certificate verification failed") from error
                 if request_number < READ_ATTEMPTS - 1:
                     self._sleep(2**request_number)
                     continue
                 raise RuntimeError(
                     "GitHub read request failed after four attempts"
+                ) from error
+        raise AssertionError("unreachable")
+
+    def send_json(self, path: str, method: str, payload: object) -> object:
+        """Send an issue write; uncertain acceptance requires caller reconciliation.
+
+        Only explicit rate-limit rejections are replayed here. In particular,
+        a server error on POST may follow a successfully committed issue.
+        """
+        if method not in {"POST", "PATCH"}:
+            raise ValueError("JSON mutations require POST or PATCH")
+        request = self._request(
+            path, method=method,
+            data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        )
+        request.add_header("Content-Type", "application/json")
+        for attempt in range(READ_ATTEMPTS):
+            try:
+                with self._opener(request, timeout=30) as response:
+                    if response.status not in {200, 201}:
+                        raise AmbiguousRequestError(
+                            f"GitHub issue write returned HTTP {response.status}"
+                        )
+                    try:
+                        return json.loads(response.read().decode("utf-8"))
+                    except (ValueError, UnicodeError) as error:
+                        raise AmbiguousRequestError(
+                            "GitHub issue write returned an invalid response"
+                        ) from error
+            except HTTPError as error:
+                if error.code in {403, 429}:
+                    delay = self._http_retry_delay(error, attempt)
+                    if attempt < READ_ATTEMPTS - 1 and delay is not None:
+                        self._sleep(delay)
+                        continue
+                if error.code >= 500 or error.code in {408, 409}:
+                    raise AmbiguousRequestError(
+                        f"GitHub issue write acceptance is unknown (HTTP {error.code})"
+                    ) from error
+                raise RuntimeError(
+                    f"GitHub issue write returned HTTP {error.code}"
+                ) from error
+            except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
+                raise AmbiguousRequestError(
+                    "GitHub issue write acceptance is unknown after a transport failure"
                 ) from error
         raise AssertionError("unreachable")
 
@@ -104,7 +153,7 @@ class GitHubTransport:
         self, error: HTTPError, request_number: int
     ) -> float | None:
         retry_after = _retry_after_seconds(error, self._now())
-        if 500 <= error.code < 600:
+        if error.code == 408 or 500 <= error.code < 600:
             return retry_after if retry_after is not None else 2**request_number
         if not _is_rate_limit_error(error):
             return None

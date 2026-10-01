@@ -1,0 +1,65 @@
+name: Scan container security
+description: Report ordinary CVEs and enforce CISA KEV with operation-level retries
+inputs:
+  image:
+    description: Local candidate image or digest-pinned published image
+    required: true
+  name:
+    description: Stable image or variant identifier
+    required: true
+  platform:
+    description: Image platform (linux/amd64, linux/arm64, linux/arm/v7)
+    required: true
+  kind:
+    description: candidate or published
+    default: candidate
+  output-directory:
+    description: Unique report directory for this image and platform
+    required: true
+  enforce-kev:
+    description: Fail on KEV findings or an unavailable KEV assessment
+    default: 'true'
+  scout-enabled:
+    description: Enable Scout; may be disabled only for candidates such as untrusted PRs
+    default: 'true'
+  github-token:
+    description: Token for authenticated read-only scanner release downloads
+    default: ${{ github.token }}
+  dockerhub-user:
+    description: Optional Docker Hub user for Scout backend authentication
+    default: ''
+  dockerhub-password:
+    description: Optional Docker Hub token for Scout backend authentication
+    default: ''
+outputs:
+  report-directory:
+    description: Absolute report directory, including report.json and findings.sarif
+    value: ${{ steps.scan.outputs.report-directory }}
+  report-status:
+    description: complete or incomplete
+    value: ${{ steps.scan.outputs.report-status }}
+  kev-status:
+    description: clear, found, or unknown
+    value: ${{ steps.scan.outputs.kev-status }}
+runs:
+  using: composite
+  steps:
+    - name: Scan immutable container bytes
+      id: scan
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        SECURITY_IMAGE: ${{ inputs.image }}
+        SECURITY_NAME: ${{ inputs.name }}
+        SECURITY_PLATFORM: ${{ inputs.platform }}
+        SECURITY_KIND: ${{ inputs.kind }}
+        SECURITY_OUTPUT: ${{ inputs.output-directory }}
+        SECURITY_ENFORCE_KEV: ${{ inputs.enforce-kev }}
+        SECURITY_SCOUT_ENABLED: ${{ inputs.scout-enabled }}
+        DOCKER_SCOUT_HUB_USER: ${{ inputs.dockerhub-user }}
+        DOCKER_SCOUT_HUB_PASSWORD: ${{ inputs.dockerhub-password }}
+        # renovate: datasource=github-releases depName=aquasecurity/trivy
+        TRIVY_VERSION: v0.74.0
+        # renovate: datasource=github-releases depName=docker/scout-cli
+        SCOUT_VERSION: v1.26.0
+      run: PYTHONPATH="$GITHUB_ACTION_PATH/../src" python3 -m salty_actions.container_scan

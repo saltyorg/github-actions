@@ -173,6 +173,127 @@ findings, annotations, summary, and source preservation, set
 `SALTBOX_LINT_TEST_BINARY` to a local executable that reports
 `saltbox-lint version 1.2.3`, then run `python3 -m unittest discover -v`.
 
+### Container security actions
+
+The container security actions are not included in published `v1.2.0`. The examples below run
+from a local checkout of this repository. Consumers must use an actual published
+release when adopting them; Renovate manages subsequent version updates.
+
+`container-scan` exports one image to a temporary archive and runs pinned,
+checksum-verified Trivy and Docker Scout releases against those same bytes.
+Python installs and invokes the scanners, normalizes their structured reports,
+and writes `report.json`, raw Trivy JSON, raw Scout/KEV SARIF, and a combined
+`findings.sarif`. All scanner severities remain in the raw reports; ordinary
+HIGH/CRITICAL findings and KEV findings enter the normalized report.
+
+```yaml
+- id: security
+  uses: ./container-scan
+  with:
+    image: local/example:candidate
+    name: example
+    platform: linux/amd64
+    output-directory: security/example-amd64
+    dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+    dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
+Ordinary findings are advisory even when a fix is available. `enforce-kev`
+defaults to `true`: detected KEV findings fail with exit code 1, and an unavailable
+KEV assessment fails with exit code 2. A failed advisory Trivy scan does not block
+publication when the Scout KEV assessment succeeds. `report-status` independently
+returns `complete` or `incomplete`; `kev-status` returns `clear`, `found`, or
+`unknown`. Reports remain available after assessment errors. Invalid inputs or
+unwritable output paths fail with exit code 2.
+
+`scout-enabled` defaults to `true`. PR candidates may disable it together with
+`enforce-kev`, retaining a Trivy-only advisory report with incomplete/unknown
+Scout coverage. Published scans cannot disable Scout. Trusted publication must
+keep KEV enforcement enabled.
+
+The action requires Linux X64/ARM64, Python 3.11+, `gh`, Docker, and enough disk
+space to export the image. The image platform can be `linux/amd64`, `linux/arm64`,
+or `linux/arm/v7`; scanning exported bytes does not execute the guest image.
+The optional Docker Hub credentials authenticate Scout's backend. Private-image
+registry login remains the caller's responsibility. Published scans require
+`kind: published` and an image reference containing a real registry digest.
+
+Retrying happens inside individual operations. Read-only commands retry transient
+network/server errors and timeouts up to four attempts, with exponential delay.
+Explicit rate-limit responses use Retry-After where available, otherwise a
+one-minute delay. Authentication, permission, missing-image, checksum, schema,
+and scanner program errors are not retried. Scanner versions have one reference
+each in the action metadata, managed by Renovate. No jobs or workflows are rerun.
+
+`container-snapshot` accepts a JSON `targets` array of `{name, platform, image}`
+objects using mutable published tags. Its Python implementation freezes each tag
+once with operation-level retries, then returns a digest-pinned scan matrix and
+an `expected-targets` file. Upload that file from the preparation job and download
+it in the reporting job so every matrix scan uses the same snapshot.
+
+```yaml
+- id: snapshot
+  uses: ./container-snapshot
+  with:
+    targets: '[{"name":"example","platform":"linux/amd64","image":"example/image:latest"}]'
+```
+
+`container-report` aggregates scans of published images and proposes or applies
+issue operations. `expected-targets` points to a JSON file declaring the complete
+image set for one stable `scope`. Each entry contains `name`, `platform`, an
+immutable `image` reference, and the mutable `tracking_reference` whose current
+manifest digest must match. Resolve and freeze that image set before matrix
+scanning. Use the same manifest-index digest for the corresponding platforms.
+
+```yaml
+- uses: ./container-report
+  with:
+    reports-directory: downloaded-security-reports
+    expected-targets: expected-targets.json
+    scope: published-images
+    dry-run: 'true'
+```
+
+Only `report.json` files below `reports-directory` are read. Preserve per-target
+subdirectories when downloading artifacts; flattening files named `report.json`
+would overwrite assessments. Every report must belong to this repository, the
+current workflow run and attempt, and its expected image digest. Candidate,
+foreign, unexpected, duplicate, malformed, and superseded reports are rejected.
+Missing or failed assessments prevent issue resolution. Valid positive findings
+from incomplete coverage can still be reported, and the reporting job exits 2
+to show that coverage is incomplete.
+
+The tool manages one issue per vulnerability/package/distro identity within the
+scope, combining architectures and variants. It preserves scanner disagreement,
+creates no duplicate on unchanged findings, and edits existing issues only when
+substantive details change. Human text outside its marked body section is
+preserved. Manual closures opt out of automatic reopening. Recurrence can reopen
+an issue resolved by automation, with the last closure's actor checked through
+issue events. Only complete current published-image scans resolve issues.
+
+`dry-run` defaults to `true`, requires Issues read access, and performs no writes.
+Activation with `dry-run: 'false'` requires the caller's repository-scoped
+`GITHUB_TOKEN` with `issues: write`. Writes run only for schedule, push, or manual
+events on the default branch; PR events cannot manage issues. Serialize reporting
+for the scope with publication using the caller workflow's concurrency group.
+The tool checks the current tracking digests before reconciliation and each
+write; concurrency prevents a publication racing that check. Place reporting in
+a separate job that publication does not depend on.
+
+GitHub reads retry network errors, timeouts, HTTP 408/5xx, and rate limits. Issue
+writes retry explicit rate-limit rejections. An uncertain create response is
+reconciled by listing owned issues and is never blindly repeated. An idempotent
+PATCH can retry only after a read proves that the same owned issue still has its
+pre-write body and state. Concurrent edits stop reconciliation. Previously
+completed operations remain in the result if a later operation fails.
+
+The aggregate JSON, `report-path` and `report-status` outputs, and job summary
+show proposed/applied operations and assessment errors. Upload reports with
+`if: always()` so failures retain evidence. Raw Scout SARIF is available for
+Code Scanning upload; it retains the scanner's package locations and fixed-version
+properties. Automated upgrades continue to own remediation; this tool does not
+alter locks, dispatch upgrades, or verify repository availability of fixes.
+
 ## Release policy
 
 Release tags are immutable semantic versions.

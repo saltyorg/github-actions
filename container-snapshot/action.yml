@@ -1,0 +1,26 @@
+name: Snapshot published containers
+description: Freeze published tags and expected platform coverage with operation-level retries
+inputs:
+  targets:
+    description: JSON array of name, platform, and mutable image reference objects
+    required: true
+  output:
+    description: File containing the complete expected digest-pinned target set
+    default: expected-targets.json
+outputs:
+  matrix:
+    description: JSON include matrix with name, platform, image digest, tracking_reference, slug, and architecture
+    value: ${{ steps.snapshot.outputs.matrix }}
+  expected-targets:
+    description: Absolute path to the complete target snapshot
+    value: ${{ steps.snapshot.outputs.expected-targets }}
+runs:
+  using: composite
+  steps:
+    - name: Freeze published manifests
+      id: snapshot
+      shell: bash
+      env:
+        SECURITY_TARGETS: ${{ inputs.targets }}
+        SECURITY_SNAPSHOT_OUTPUT: ${{ inputs.output }}
+      run: PYTHONPATH="$GITHUB_ACTION_PATH/../src" python3 -m salty_actions.container_snapshot

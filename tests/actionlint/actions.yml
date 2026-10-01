@@ -38,3 +38,20 @@ jobs:
           paths: |
             roles/saltbox/tasks/main.yml
             roles/sandbox/tasks/main.yml
+
+      - uses: ./container-scan
+        with:
+          image: local/example:candidate
+          name: example
+          platform: linux/amd64
+          output-directory: security/example-amd64
+
+      - uses: ./container-report
+        with:
+          reports-directory: security
+          expected-targets: expected-targets.json
+          scope: example
+
+      - uses: ./container-snapshot
+        with:
+          targets: '[{"name":"example","platform":"linux/amd64","image":"example/image:latest"}]'

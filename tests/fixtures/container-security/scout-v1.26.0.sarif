@@ -1,0 +1,902 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "fullName": "Docker Scout",
+          "informationUri": "https://docker.com/products/docker-scout",
+          "name": "docker scout",
+          "rules": [
+            {
+              "id": "CVE-2026-58055",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-58055"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-58055?s=alpine&n=nghttp2&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C1.70.0-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                                         |\n|Package         pkg:apk/alpine/nghttp2-libs@1.69.0-r0?arch=x86_64&distro=alpine-3.24.2&upstream=nghttp2  |\n|Affected range  <1.70.0-r0                                                                               |\n|Fixed version   1.70.0-r0                                                                                |\n"
+              },
+              "properties": {
+                "affected_version": "<1.70.0-r0",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "1.70.0-r0",
+                "purls": [
+                  "pkg:apk/alpine/nghttp2-libs@1.69.0-r0?arch=x86_64&distro=alpine-3.24.2&upstream=nghttp2"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-58469",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-58469"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-58469?s=alpine&n=wget&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D1.25.0-r3",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=1.25.0-r3                                                     |\n|Fixed version   not fixed                                                       |\n"
+              },
+              "properties": {
+                "affected_version": "<=1.25.0-r3",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-58470",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-58470"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-58470?s=alpine&n=wget&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D1.25.0-r3",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=1.25.0-r3                                                     |\n|Fixed version   not fixed                                                       |\n"
+              },
+              "properties": {
+                "affected_version": "<=1.25.0-r3",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-58471",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-58471"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-58471?s=alpine&n=wget&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D1.25.0-r3",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=1.25.0-r3                                                     |\n|Fixed version   not fixed                                                       |\n"
+              },
+              "properties": {
+                "affected_version": "<=1.25.0-r3",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-58472",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-58472"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-58472?s=alpine&n=wget&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D1.25.0-r3",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=1.25.0-r3                                                     |\n|Fixed version   not fixed                                                       |\n"
+              },
+              "properties": {
+                "affected_version": "<=1.25.0-r3",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-56392",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-56392"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-56392?s=alpine&n=coreutils&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D9.11-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=9.11-r0                                                          |\n|Fixed version   not fixed                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<=9.11-r0",
+                "cvssV3_severity": "LOW",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "1.8",
+                "tags": [
+                  "LOW"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-15310",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-15310"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-15310?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "LOW",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "2.1",
+                "tags": [
+                  "LOW"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2016-2781",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2016-2781"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2016-2781?s=alpine&n=coreutils&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D9.11-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=9.11-r0                                                          |\n|Fixed version   not fixed                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<=9.11-r0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "4.6",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-56391",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-56391"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-56391?s=alpine&n=coreutils&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D9.11-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=9.11-r0                                                          |\n|Fixed version   not fixed                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<=9.11-r0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "4.6",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-15806",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-15806"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-15806?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "6.0",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-17084",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-17084"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-17084?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "6.0",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-19672",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-19672"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-19672?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "6.3",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-103111",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-103111"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-103111?s=alpine&n=pcre2&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C10.49-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/pcre2@10.48-r0?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <10.49-r0                                                       |\n|Fixed version   10.49-r0                                                        |\n"
+              },
+              "properties": {
+                "affected_version": "<10.49-r0",
+                "cvssV3_severity": "HIGH",
+                "fixed_version": "10.49-r0",
+                "purls": [
+                  "pkg:apk/alpine/pcre2@10.48-r0?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "7.6",
+                "tags": [
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-19553",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-19553"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-19553?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "HIGH",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "7.6",
+                "tags": [
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-82049",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-82049"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-82049?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "HIGH",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "8.4",
+                "tags": [
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2025-69194",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2025-69194"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2025-69194?s=alpine&n=wget&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D1.25.0-r3",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                |\n|Package         pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=1.25.0-r3                                                     |\n|Fixed version   not fixed                                                       |\n"
+              },
+              "properties": {
+                "affected_version": "<=1.25.0-r3",
+                "cvssV3_severity": "HIGH",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "8.8",
+                "tags": [
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2008-0888",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2008-0888"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2008-0888?s=alpine&n=unzip&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C%3D6.0-r16",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                               |\n|Package         pkg:apk/alpine/unzip@6.0-r16?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <=6.0-r16                                                      |\n|Fixed version   not fixed                                                      |\n"
+              },
+              "properties": {
+                "affected_version": "<=6.0-r16",
+                "cvssV3_severity": "HIGH",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:apk/alpine/unzip@6.0-r16?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "9.3",
+                "tags": [
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2026-19445",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-19445"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2026-19445?s=alpine&n=python3&ns=alpine&t=apk&osn=alpine&osv=3.24&vr=%3C3.14.8-r0",
+              "help": {
+                "text": "\n",
+                "markdown": "> \n\n|                                                                                   |\n|Package         pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  |\n|Affected range  <3.14.8-r0                                                         |\n|Fixed version   3.14.8-r0                                                          |\n"
+              },
+              "properties": {
+                "affected_version": "<3.14.8-r0",
+                "cvssV3_severity": "CRITICAL",
+                "fixed_version": "3.14.8-r0",
+                "purls": [
+                  "pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2"
+                ],
+                "security-severity": "9.2",
+                "tags": [
+                  "CRITICAL"
+                ]
+              }
+            }
+          ],
+          "version": "1.26.0"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2026-58055",
+          "ruleIndex": 0,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-58055                                                                           \nSeverity         :UNSPECIFIED                                                                              \nPackage          :pkg:apk/alpine/nghttp2-libs@1.69.0-r0?arch=x86_64&distro=alpine-3.24.2&upstream=nghttp2  \nAffected range   :<1.70.0-r0                                                                               \nFixed version    :1.70.0-r0                                                                                \nEPSS Score       :0.003190                                                                                 \nEPSS Percentile  :0.224560                                                                                 \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/lib/libnghttp2.so.14.29.4"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-58469",
+          "ruleIndex": 1,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-58469                                                  \nSeverity         :UNSPECIFIED                                                     \nPackage          :pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=1.25.0-r3                                                     \nFixed version    :not fixed                                                       \nEPSS Score       :0.004930                                                        \nEPSS Percentile  :0.400350                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/etc/wgetrc"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-58470",
+          "ruleIndex": 2,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-58470                                                  \nSeverity         :UNSPECIFIED                                                     \nPackage          :pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=1.25.0-r3                                                     \nFixed version    :not fixed                                                       \nEPSS Score       :0.004230                                                        \nEPSS Percentile  :0.342230                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/etc/wgetrc"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-58471",
+          "ruleIndex": 3,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-58471                                                  \nSeverity         :UNSPECIFIED                                                     \nPackage          :pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=1.25.0-r3                                                     \nFixed version    :not fixed                                                       \nEPSS Score       :0.003900                                                        \nEPSS Percentile  :0.305700                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/etc/wgetrc"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-58472",
+          "ruleIndex": 4,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-58472                                                  \nSeverity         :UNSPECIFIED                                                     \nPackage          :pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=1.25.0-r3                                                     \nFixed version    :not fixed                                                       \nEPSS Score       :0.003900                                                        \nEPSS Percentile  :0.305700                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/etc/wgetrc"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-56392",
+          "ruleIndex": 5,
+          "kind": "fail",
+          "level": "note",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-56392                                                     \nSeverity         :LOW                                                                \nPackage          :pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=9.11-r0                                                          \nFixed version    :not fixed                                                          \nEPSS Score       :0.001860                                                           \nEPSS Percentile  :0.073970                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/bin/coreutils"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-15310",
+          "ruleIndex": 6,
+          "kind": "fail",
+          "level": "note",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-15310                                                     \nSeverity         :LOW                                                                \nPackage          :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<3.14.8-r0                                                         \nFixed version    :3.14.8-r0                                                          \nEPSS Score       :0.005130                                                           \nEPSS Percentile  :0.415180                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2016-2781",
+          "ruleIndex": 7,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "Vulnerability    :CVE-2016-2781                                                      \nSeverity         :MEDIUM                                                             \nPackage          :pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=9.11-r0                                                          \nFixed version    :not fixed                                                          \nEPSS Score       :0.004280                                                           \nEPSS Percentile  :0.346930                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/bin/coreutils"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-56391",
+          "ruleIndex": 8,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-56391                                                     \nSeverity         :MEDIUM                                                             \nPackage          :pkg:apk/alpine/coreutils@9.11-r0?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=9.11-r0                                                          \nFixed version    :not fixed                                                          \nEPSS Score       :0.001710                                                           \nEPSS Percentile  :0.057900                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/bin/coreutils"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-15806",
+          "ruleIndex": 9,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-15806                                                     \nSeverity         :MEDIUM                                                             \nPackage          :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<3.14.8-r0                                                         \nFixed version    :3.14.8-r0                                                          \nEPSS Score       :0.004510                                                           \nEPSS Percentile  :0.368550                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-17084",
+          "ruleIndex": 10,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-17084                                                     \nSeverity         :MEDIUM                                                             \nPackage          :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<3.14.8-r0                                                         \nFixed version    :3.14.8-r0                                                          \nEPSS Score       :0.007210                                                           \nEPSS Percentile  :0.521810                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-19672",
+          "ruleIndex": 11,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-19672                                                     \nSeverity         :MEDIUM                                                             \nPackage          :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<3.14.8-r0                                                         \nFixed version    :3.14.8-r0                                                          \nEPSS Score       :0.005220                                                           \nEPSS Percentile  :0.421590                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-103111",
+          "ruleIndex": 12,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-103111                                                 \nSeverity         :HIGH                                                            \nPackage          :pkg:apk/alpine/pcre2@10.48-r0?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<10.49-r0                                                       \nFixed version    :10.49-r0                                                        \nEPSS Score       :0.002060                                                        \nEPSS Percentile  :0.095830                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/lib/libpcre2-8.so.0.16.0"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-19553",
+          "ruleIndex": 13,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability   :CVE-2026-19553                                                     \nSeverity        :HIGH                                                               \nPackage         :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range  :<3.14.8-r0                                                         \nFixed version   :3.14.8-r0                                                          \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-82049",
+          "ruleIndex": 14,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability    :CVE-2026-82049                                                     \nSeverity         :HIGH                                                               \nPackage          :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<3.14.8-r0                                                         \nFixed version    :3.14.8-r0                                                          \nEPSS Score       :0.002040                                                           \nEPSS Percentile  :0.092870                                                           \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2025-69194",
+          "ruleIndex": 15,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability    :CVE-2025-69194                                                  \nSeverity         :HIGH                                                            \nPackage          :pkg:apk/alpine/wget@1.25.0-r3?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=1.25.0-r3                                                     \nFixed version    :not fixed                                                       \nEPSS Score       :0.008000                                                        \nEPSS Percentile  :0.549290                                                        \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/etc/wgetrc"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2008-0888",
+          "ruleIndex": 16,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability    :CVE-2008-0888                                                  \nSeverity         :HIGH                                                           \nPackage          :pkg:apk/alpine/unzip@6.0-r16?arch=x86_64&distro=alpine-3.24.2  \nAffected range   :<=6.0-r16                                                      \nFixed version    :not fixed                                                      \nEPSS Score       :0.062900                                                       \nEPSS Percentile  :0.933750                                                       \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/funzip"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-19445",
+          "ruleIndex": 17,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "Vulnerability   :CVE-2026-19445                                                     \nSeverity        :CRITICAL                                                           \nPackage         :pkg:apk/alpine/python3@3.14.7-r1?arch=x86_64&distro=alpine-3.24.2  \nAffected range  :<3.14.8-r0                                                         \nFixed version   :3.14.8-r0                                                          \n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/lib/apk/db/installed"
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/bin/pydoc3.14"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
