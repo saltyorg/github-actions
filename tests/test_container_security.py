@@ -290,6 +290,32 @@ class ScanTests(unittest.TestCase):
 
 
 class ReportingTests(unittest.TestCase):
+    def test_callable_reconciliation_does_not_read_ambient_ci_identity(self):
+        client = FakeIssueClient()
+        with patch.dict(os.environ, {"GITHUB_RUN_ID": "999", "GITHUB_RUN_ATTEMPT": "7"}):
+            result = reconcile([scan_report()], EXPECTED, "containers", client, runner=current_runner)
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["actions"][0]["operation"], "create")
+
+    def test_report_entrypoint_checks_the_current_ci_run_and_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "reports").mkdir()
+            (root / "reports/report.json").write_text(json.dumps(scan_report()))
+            (root / "expected.json").write_text(json.dumps(EXPECTED))
+            env = {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_RUN_ID": "123",
+                   "GITHUB_RUN_ATTEMPT": "1", "SECURITY_REPORTS": str(root / "reports"),
+                   "SECURITY_EXPECTED_TARGETS": str(root / "expected.json"),
+                   "SECURITY_SCOPE": "containers", "SECURITY_REPORT_OUTPUT": str(root / "result.json")}
+            for context, expected_exit in [({}, 0), ({"GITHUB_RUN_ID": "999"}, 2),
+                                            ({"GITHUB_RUN_ATTEMPT": "7"}, 2)]:
+                with self.subTest(context=context), patch.dict(os.environ, {**env, **context}, clear=True), patch(
+                    "salty_actions.container_report.IssueClient", return_value=FakeIssueClient()), patch(
+                        "salty_actions.container_report.CommandRunner", return_value=current_runner):
+                    self.assertEqual(report_main(), expected_exit)
+                if expected_exit:
+                    self.assertIn("different workflow run or attempt", (root / "result.json").read_text())
+
     def groups(self):
         return aggregate([scan_report()], EXPECTED, REPOSITORY)["groups"]
 

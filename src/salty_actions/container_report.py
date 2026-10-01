@@ -144,14 +144,14 @@ def ensure_trusted_write(env: dict) -> None:
 
 
 def reconcile(reports: list[dict], expected: list[dict], scope: str, client: IssueClient,
-              *, dry_run: bool = True, runner=None) -> dict:
+              *, dry_run: bool = True, runner=None,
+              run_id: str | None = None, run_attempt: str | None = None) -> dict:
     scope = text(scope, "reporting scope")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scope):
         raise ValueError("reporting scope must be a short identifier")
     expected = expected_targets(expected)
     result = aggregate(reports, expected, client.repository,
-                       run_id=os.environ.get("GITHUB_RUN_ID"),
-                       run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"))
+                       run_id=run_id, run_attempt=run_attempt)
     # Stale evidence must not create, update, or resolve deployed-image issues.
     check_current(expected, runner or CommandRunner())
     issues = client.list_issues()
@@ -191,7 +191,8 @@ def main() -> int:
         root = Path(env["SECURITY_REPORTS"])
         reports = [json.loads(path.read_text()) for path in sorted(root.rglob("report.json"))]
         client = IssueClient(env.get("GITHUB_TOKEN", ""), env.get("GITHUB_REPOSITORY", ""))
-        result = reconcile(reports, expected, env.get("SECURITY_SCOPE", ""), client, dry_run=dry_run)
+        result = reconcile(reports, expected, env.get("SECURITY_SCOPE", ""), client, dry_run=dry_run,
+                           run_id=env.get("GITHUB_RUN_ID"), run_attempt=env.get("GITHUB_RUN_ATTEMPT"))
         status = 0 if result["complete"] else 2
     except (KeyError, OSError, ValueError, RuntimeError) as error:
         result["errors"].append(safe_error(str(error)))
