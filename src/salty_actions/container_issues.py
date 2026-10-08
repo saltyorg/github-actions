@@ -97,7 +97,7 @@ class IssueClient:
                                                       if key != "state_reason")):
                     raise AmbiguousRequestError("GitHub issue write returned no issue number")
                 return result
-            except AmbiguousRequestError:
+            except AmbiguousRequestError as error:
                 # A POST is never blindly repeated, even after a server error.
                 # Read retries handle temporarily unavailable reconciliation.
                 matches = [row for row in self.list_issues()
@@ -111,8 +111,9 @@ class IssueClient:
                     return matches[0]
                 if not number or len(matches) != 1 or attempt == 3:
                     raise AmbiguousRequestError(
-                        "Issue write could not be reconciled; no duplicate creation attempted"
-                    )
+                        "Issue write could not be reconciled; no duplicate creation attempted: "
+                        f"{error}"
+                    ) from error
                 # PATCH sets an exact desired state. Replay only after finding
                 # the same owned issue, without an intervening body/state edit.
                 current = matches[0]

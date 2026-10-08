@@ -196,7 +196,8 @@ def main() -> int:
         status = 0 if result["complete"] else 2
     except (KeyError, OSError, ValueError, RuntimeError) as error:
         result["errors"].append(safe_error(str(error)))
-        print(f"Container reporting failed: {safe_error(str(error))}", file=sys.stderr)
+    for error in result["errors"]:
+        print(f"Container reporting failed: {safe_error(error)}", file=sys.stderr)
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, indent=2) + "\n")

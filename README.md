@@ -289,7 +289,10 @@ pre-write body and state. Concurrent edits stop reconciliation. Previously
 completed operations remain in the result if a later operation fails.
 
 The aggregate JSON, `report-path` and `report-status` outputs, and job summary
-show proposed/applied operations and assessment errors. Upload reports with
+show proposed/applied operations and assessment errors. Assessment and issue
+reconciliation errors also appear in the action log with credentials redacted.
+Unreconciled writes retain the underlying HTTP or transport failure in the error
+message without repeating issue creation. Upload reports with
 `if: always()` so failures retain evidence. Use `scout-code-scanning.sarif` for
 Code Scanning uploads. It retains every finding, package and fixed-version
 property, and the primary file location. GitHub displays only the primary location,

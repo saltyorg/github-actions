@@ -318,6 +318,73 @@ class ScanTests(unittest.TestCase):
 
 
 class ReportingTests(unittest.TestCase):
+    def test_report_entrypoint_logs_incomplete_assessments_without_exposing_tokens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "reports").mkdir()
+            (root / "expected.json").write_text(json.dumps(EXPECTED))
+            env = {"GITHUB_TOKEN": "private-test-token", "GITHUB_REPOSITORY": REPOSITORY,
+                   "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+                   "SECURITY_REPORTS": str(root / "reports"),
+                   "SECURITY_EXPECTED_TARGETS": str(root / "expected.json"),
+                   "SECURITY_SCOPE": "containers", "SECURITY_REPORT_OUTPUT": str(root / "result.json")}
+            for complete in (True, False):
+                report = scan_report(complete=complete)
+                if not complete:
+                    report["errors"] = ["Trivy network failure private-test-token"]
+                (root / "reports/report.json").write_text(json.dumps(report))
+                stderr = io.StringIO()
+                with self.subTest(complete=complete), patch.dict(os.environ, env, clear=True), patch(
+                    "salty_actions.container_report.IssueClient", return_value=FakeIssueClient()), patch(
+                        "salty_actions.container_report.CommandRunner", return_value=current_runner), patch(
+                            "sys.stderr", stderr):
+                    self.assertEqual(report_main(), 0 if complete else 2)
+                if complete:
+                    self.assertEqual(stderr.getvalue(), "")
+                else:
+                    self.assertIn("Container reporting failed: Trivy network failure ***\n",
+                                  stderr.getvalue())
+                    self.assertIn("Container reporting failed: Incomplete assessment: base/linux/amd64\n",
+                                  stderr.getvalue())
+                    self.assertNotIn(env["GITHUB_TOKEN"], stderr.getvalue())
+
+    def test_report_entrypoint_logs_unreconciled_write_cause_and_retains_evidence(self):
+        for failure, cause in [(http_error(503), "HTTP 503"),
+                               (URLError("connection reset"), "transport failure")]:
+            with self.subTest(cause=cause), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "reports").mkdir()
+                (root / "reports/report.json").write_text(json.dumps(scan_report()))
+                (root / "expected.json").write_text(json.dumps(EXPECTED))
+                (root / "event.json").write_text(json.dumps({"repository": {
+                    "full_name": REPOSITORY, "default_branch": "main"}}))
+                env = {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_RUN_ID": "123",
+                       "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "schedule",
+                       "GITHUB_EVENT_PATH": str(root / "event.json"), "GITHUB_REF": "refs/heads/main",
+                       "SECURITY_DRY_RUN": "false", "SECURITY_REPORTS": str(root / "reports"),
+                       "SECURITY_EXPECTED_TARGETS": str(root / "expected.json"),
+                       "SECURITY_SCOPE": "containers", "SECURITY_REPORT_OUTPUT": str(root / "result.json"),
+                       "GITHUB_OUTPUT": str(root / "outputs"), "GITHUB_STEP_SUMMARY": str(root / "summary")}
+                opener = RecordingOpener([FakeResponse(200, []), failure, FakeResponse(200, [])])
+                client = IssueClient("token", REPOSITORY, transport=GitHubTransport(
+                    "token", opener=opener, sleep=lambda _: None))
+                stderr = io.StringIO()
+                with patch.dict(os.environ, env, clear=True), patch(
+                    "salty_actions.container_report.IssueClient", return_value=client), patch(
+                        "salty_actions.container_report.CommandRunner", return_value=current_runner), patch(
+                            "sys.stderr", stderr):
+                    self.assertEqual(report_main(), 2)
+                result = json.loads((root / "result.json").read_text())
+                self.assertFalse(result["complete"])
+                self.assertEqual(result["applied"], [])
+                self.assertEqual(len(result["actions"]), 1)
+                self.assertIn("Issue write could not be reconciled", result["errors"][0])
+                self.assertIn(cause, result["errors"][0])
+                self.assertEqual(stderr.getvalue(), f"Container reporting failed: {result['errors'][0]}\n")
+                self.assertIn(result["errors"][0], (root / "summary").read_text())
+                self.assertIn("report-status=incomplete", (root / "outputs").read_text())
+                self.assertEqual([request.method for request in opener.requests], ["GET", "POST", "GET"])
+
     def test_callable_reconciliation_does_not_read_ambient_ci_identity(self):
         client = FakeIssueClient()
         with patch.dict(os.environ, {"GITHUB_RUN_ID": "999", "GITHUB_RUN_ATTEMPT": "7"}):
