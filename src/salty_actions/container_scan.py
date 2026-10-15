@@ -1,4 +1,5 @@
 """Scan immutable image bytes; ordinary findings are advisory."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ from tempfile import TemporaryDirectory
 from .container_findings import obj, scout_findings, text, trivy_findings
 from .container_tools import CommandRunner, OperationError, install_tool, safe_error
 from .container_sarif import code_scanning_report
+from .container_packages import assess, inventory, digest
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 PLATFORM = re.compile(r"linux/(?:amd64|arm64(?:/v8)?|arm/v7)\Z")
@@ -36,7 +38,9 @@ def validate_target(target: object, *, published: bool) -> dict:
         raise ValueError("unsupported image platform")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]*", image):
         raise ValueError("invalid Docker image reference")
-    if published and ("@" not in image or not DIGEST.fullmatch(image.rsplit("@", 1)[1])):
+    if published and (
+        "@" not in image or not DIGEST.fullmatch(image.rsplit("@", 1)[1])
+    ):
         raise ValueError("published scans require a digest-pinned image reference")
     return {"name": name, "platform": platform, "image": image}
 
@@ -46,26 +50,64 @@ def sarif_report(findings: list[dict]) -> dict:
     results = []
     for item in findings:
         rule_id = f"{item['source']}/{item['key']}"
-        rules[rule_id] = {"id": rule_id, "name": item["id"],
-                          "shortDescription": {"text": f"{item['id']} in {item['package']}"},
-                          "properties": {"security-severity": {
-                              "CRITICAL": "9.0", "HIGH": "8.0", "MEDIUM": "5.0", "LOW": "2.0",
-                          }.get(item["severity"], "0.0")}}
+        rules[rule_id] = {
+            "id": rule_id,
+            "name": item["id"],
+            "shortDescription": {"text": f"{item['id']} in {item['package']}"},
+            "properties": {
+                "security-severity": {
+                    "CRITICAL": "9.0",
+                    "HIGH": "8.0",
+                    "MEDIUM": "5.0",
+                    "LOW": "2.0",
+                }.get(item["severity"], "0.0")
+            },
+        }
         if item["url"]:
             rules[rule_id]["helpUri"] = item["url"]
-        results.append({"ruleId": rule_id, "level": "warning", "message": {
-            "text": f"{item['severity']} {item['id']}: {item['package']} {item['version']}; "
-                    f"fix: {item['fix'] or 'not provided by scanner'}"},
-            "locations": [{"logicalLocations": [{"name": item["package"], "kind": "module"}]}]})
-    return {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-            "runs": [{"tool": {"driver": {"name": "Salty container security",
-                                         "rules": list(rules.values())}}, "results": results}]}
+        results.append(
+            {
+                "ruleId": rule_id,
+                "level": "warning",
+                "message": {
+                    "text": f"{item['severity']} {item['id']}: {item['package']} {item['version']}; "
+                    f"fix: {item['fix'] or 'not provided by scanner'}"
+                },
+                "locations": [
+                    {"logicalLocations": [{"name": item["package"], "kind": "module"}]}
+                ],
+            }
+        )
+    return {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Salty container security",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
 
 
-def scan(target: dict, kind: str, output: Path, *, runner=None,
-         installer=install_tool, architecture: str = "X64",
-         trivy_version: str = "v0.74.0", scout_version: str = "v1.26.0",
-         scout_enabled: bool = True) -> dict:
+def scan(
+    target: dict,
+    kind: str,
+    output: Path,
+    *,
+    runner=None,
+    installer=install_tool,
+    architecture: str = "X64",
+    trivy_version: str = "v0.74.0",
+    scout_version: str = "v1.26.0",
+    scout_enabled: bool = True,
+    check_fix_availability: bool = True,
+) -> dict:
     if kind not in {"candidate", "published"}:
         raise ValueError("scan kind must be candidate or published")
     target = validate_target(target, published=kind == "published")
@@ -74,20 +116,62 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
     text(str(output), "output directory")
     output.mkdir(parents=True, exist_ok=True)
     runner = runner or CommandRunner()
-    report = {"schema": 1, "kind": kind, "target": target,
-              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
-              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-              "scanned_at": datetime.now(timezone.utc).isoformat(),
-              "image_id": "", "scanners": {}, "findings": [], "errors": [],
-              "kev_status": "unknown", "report_status": "incomplete"}
+    report: dict = {
+        "schema": 2,
+        "kind": kind,
+        "target": target,
+        "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+        "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "image_id": "",
+        "scanners": {},
+        "findings": [],
+        "errors": [],
+        "kev_status": "unknown",
+        "report_status": "incomplete",
+    }
+    report["inventory"] = {"status": "unknown"}
+    report["availability"] = {
+        "status": "unknown",
+        "errors": [],
+        "fixes": {},
+        "remediated": [],
+    }
+    report["provenance"] = {
+        "trivy_version": trivy_version,
+        "scout_version": scout_version,
+        "scout_advisory_snapshot": None,
+        "trivy_database": None,
+        "configuration_sha256": digest(
+            {"all_severities": True, "scout": scout_enabled}
+        ),
+    }
     with TemporaryDirectory(prefix="image-", dir=output) as temporary:
         work = Path(temporary)
         try:
             if kind == "published":
-                runner(["docker", "pull", "--platform", target["platform"], target["image"]])
-            metadata = json.loads(runner(["docker", "image", "inspect", target["image"],
-                                          "--format", "{{json .}}"] ))
+                runner(
+                    [
+                        "docker",
+                        "pull",
+                        "--platform",
+                        target["platform"],
+                        target["image"],
+                    ]
+                )
+            metadata = json.loads(
+                runner(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        target["image"],
+                        "--format",
+                        "{{json .}}",
+                    ]
+                )
+            )
             metadata = obj(metadata, "image metadata")
             image_id = metadata.get("Id")
             if not isinstance(image_id, str) or not DIGEST.fullmatch(image_id):
@@ -100,7 +184,9 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
             if target["platform"] in {"linux/arm64", "linux/arm64/v8"}:
                 equivalent.update({"linux/arm64", "linux/arm64/v8"})
             if actual not in equivalent:
-                raise ValueError(f"image platform {actual} does not match {target['platform']}")
+                raise ValueError(
+                    f"image platform {actual} does not match {target['platform']}"
+                )
             report["image_id"] = image_id
             archive = work / "image.tar"
             runner(["docker", "image", "save", "--output", str(archive), image_id])
@@ -108,10 +194,14 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
             for engine, version in (("trivy", trivy_version), ("scout", scout_version)):
                 if engine == "scout" and not scout_enabled:
                     report["scanners"].update({"scout": "error", "kev": "error"})
-                    report["errors"].append("Scout and KEV coverage disabled for this candidate run")
+                    report["errors"].append(
+                        "Scout and KEV coverage disabled for this candidate run"
+                    )
                     continue
                 try:
-                    binary = installer(engine, version, architecture, work / engine, runner)
+                    binary = installer(
+                        engine, version, architecture, work / engine, runner
+                    )
                 except (OperationError, OSError, ValueError) as error:
                     report["scanners"][engine] = "error"
                     report["errors"].append(f"{engine} setup: {safe_error(str(error))}")
@@ -120,26 +210,73 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
                     continue
                 modes = ("trivy",) if engine == "trivy" else ("scout", "kev")
                 for mode in modes:
-                    destination = output / f"{mode}.{'json' if mode == 'trivy' else 'sarif'}"
+                    destination = (
+                        output / f"{mode}.{'json' if mode == 'trivy' else 'sarif'}"
+                    )
                     destination.unlink(missing_ok=True)
                     try:
                         if engine == "trivy":
-                            command = [str(binary), "image", "--quiet", "--scanners", "vuln",
-                                       "--format", "json", "--output", str(destination),
-                                       "--input", str(archive)]
+                            command = [
+                                str(binary),
+                                "image",
+                                "--cache-dir",
+                                str(work / "trivy-cache"),
+                                "--quiet",
+                                "--scanners",
+                                "vuln",
+                                "--format",
+                                "json",
+                                "--output",
+                                str(destination),
+                                "--input",
+                                str(archive),
+                            ]
                         else:
-                            command = [str(binary), "cves", "--format", "sarif", "--output",
-                                       str(destination), "--platform", target["platform"]]
+                            command = [
+                                str(binary),
+                                "cves",
+                                "--format",
+                                "sarif",
+                                "--output",
+                                str(destination),
+                                "--platform",
+                                target["platform"],
+                            ]
                             if mode == "kev":
                                 command.append("--only-cisa-kev")
                             command.append(f"archive://{archive}")
                         runner(command)
                         payload = json.loads(destination.read_text())
-                        findings = trivy_findings(payload) if engine == "trivy" else scout_findings(
-                            payload, kev=mode == "kev")
+                        findings = (
+                            trivy_findings(payload, all_severities=True)
+                            if engine == "trivy"
+                            else scout_findings(
+                                payload, kev=mode == "kev", all_severities=True
+                            )
+                        )
+                        if engine == "trivy":
+                            report["inventory"] = inventory(payload)
+                            metadata_path = work / "trivy-cache/db/metadata.json"
+                            if metadata_path.is_file():
+                                metadata = obj(
+                                    json.loads(metadata_path.read_text()),
+                                    "Trivy DB metadata",
+                                )
+                                report["provenance"]["trivy_database"] = {
+                                    key: metadata.get(key)
+                                    for key in (
+                                        "Version",
+                                        "UpdatedAt",
+                                        "NextUpdate",
+                                        "DownloadedAt",
+                                    )
+                                }
                         if mode == "scout":
                             compatible = output / "scout-code-scanning.sarif"
-                            compatible.write_text(json.dumps(code_scanning_report(payload), indent=2) + "\n")
+                            compatible.write_text(
+                                json.dumps(code_scanning_report(payload), indent=2)
+                                + "\n"
+                            )
                         report["findings"].extend(findings)
                         report["scanners"][mode] = "complete"
                         if mode == "kev":
@@ -149,10 +286,25 @@ def scan(target: dict, kind: str, output: Path, *, runner=None,
                         report["errors"].append(f"{mode}: {safe_error(str(error))}")
         except (OperationError, OSError, ValueError) as error:
             report["errors"].append(f"image snapshot: {safe_error(str(error))}")
-    if report["scanners"] == {"trivy": "complete", "scout": "complete", "kev": "complete"}:
+    if kind == "published" and check_fix_availability and report["image_id"]:
+        report["availability"] = assess(
+            report["inventory"],
+            report["findings"],
+            target,
+            report["image_id"],
+            output,
+            runner,
+        )
+    if report["scanners"] == {
+        "trivy": "complete",
+        "scout": "complete",
+        "kev": "complete",
+    }:
         report["report_status"] = "complete"
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    (output / "findings.sarif").write_text(json.dumps(sarif_report(report["findings"]), indent=2) + "\n")
+    (output / "findings.sarif").write_text(
+        json.dumps(sarif_report(report["findings"]), indent=2) + "\n"
+    )
     return report
 
 
@@ -162,27 +314,53 @@ def main() -> int:
         enforce = boolean(env.get("SECURITY_ENFORCE_KEV", "true"))
         if env.get("RUNNER_OS", "Linux") != "Linux":
             raise ValueError("container scanning requires a Linux runner")
-        target = {"name": env.get("SECURITY_NAME", ""), "platform": env.get("SECURITY_PLATFORM", ""),
-                  "image": env.get("SECURITY_IMAGE", "")}
+        target = {
+            "name": env.get("SECURITY_NAME", ""),
+            "platform": env.get("SECURITY_PLATFORM", ""),
+            "image": env.get("SECURITY_IMAGE", ""),
+        }
         output = Path(env.get("SECURITY_OUTPUT", "container-security"))
-        report = scan(target, env.get("SECURITY_KIND", "candidate"), output,
-                      architecture=env.get("RUNNER_ARCH", "X64"),
-                      trivy_version=env.get("TRIVY_VERSION", ""),
-                      scout_version=env.get("SCOUT_VERSION", ""),
-                      scout_enabled=boolean(env.get("SECURITY_SCOUT_ENABLED", "true")))
+        report = scan(
+            target,
+            env.get("SECURITY_KIND", "candidate"),
+            output,
+            architecture=env.get("RUNNER_ARCH", "X64"),
+            trivy_version=env.get("TRIVY_VERSION", ""),
+            scout_version=env.get("SCOUT_VERSION", ""),
+            scout_enabled=boolean(env.get("SECURITY_SCOUT_ENABLED", "true")),
+            check_fix_availability=boolean(
+                env.get("SECURITY_CHECK_FIX_AVAILABILITY", "true")
+            ),
+        )
         if env.get("GITHUB_OUTPUT"):
             with Path(env["GITHUB_OUTPUT"]).open("a") as stream:
                 stream.write(f"report-directory={output.resolve()}\n")
-                stream.write(f"report-status={report['report_status']}\nkev-status={report['kev_status']}\n")
+                stream.write(
+                    f"report-status={report['report_status']}\nkev-status={report['kev_status']}\n"
+                )
+                stream.write(
+                    f"availability-status={report.get('availability', {}).get('status', 'unknown')}\n"
+                )
         if env.get("GITHUB_STEP_SUMMARY"):
             with Path(env["GITHUB_STEP_SUMMARY"]).open("a") as stream:
-                stream.write(f"\nContainer scan `{target['name']}` / `{target['platform']}`: "
-                             f"{report['report_status']}; KEV: {report['kev_status']}; "
-                             f"{len(report['findings'])} scanner findings.\n")
+                stream.write(
+                    f"\nContainer scan `{target['name']}` / `{target['platform']}`: "
+                    f"{report['report_status']}; KEV: {report['kev_status']}; "
+                    f"{len(report['findings'])} scanner findings.\n"
+                )
                 for error in report["errors"]:
                     stream.write(f"\nAssessment error: {error}\n")
+                availability = report.get("availability", {})
+                stream.write(
+                    f"\nFix availability: {availability.get('status', 'unknown')}.\n"
+                )
+                for message in availability.get("errors", []):
+                    stream.write(f"\nFix availability error: {safe_error(message)}\n")
         if enforce and report["kev_status"] != "clear":
-            print(f"KEV assessment blocks publication: {report['kev_status']}", file=sys.stderr)
+            print(
+                f"KEV assessment blocks publication: {report['kev_status']}",
+                file=sys.stderr,
+            )
             return 1 if report["kev_status"] == "found" else 2
         return 0
     except (OSError, ValueError, OperationError) as error:

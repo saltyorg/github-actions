@@ -185,7 +185,8 @@ Python installs and invokes the scanners, normalizes their structured reports,
 and writes `report.json`, raw Trivy JSON, raw Scout/KEV SARIF, and a combined
 `findings.sarif`. It also writes `scout-code-scanning.sarif` with bounded file
 locations for GitHub ingestion. All scanner severities remain in the raw reports; ordinary
-HIGH/CRITICAL findings and KEV findings enter the normalized report.
+findings enter the normalized report so existing issues can track severity
+reductions. New issues still require HIGH/CRITICAL severity or a KEV finding.
 
 ```yaml
 - id: security
@@ -212,9 +213,12 @@ unwritable output paths fail with exit code 2.
 Scout coverage. Published scans cannot disable Scout. Trusted publication must
 keep KEV enforcement enabled.
 
-The action requires Linux X64/ARM64, Python 3.11+, `gh`, Docker, and enough disk
+The action requires Linux X64/ARM64, Python 3.11+, `gh`, `curl`, Docker, and enough disk
 space to export the image. The image platform can be `linux/amd64`, `linux/arm64`,
-or `linux/arm/v7`; scanning exported bytes does not execute the guest image.
+or `linux/arm/v7`. Scanners read exported bytes. Published Alpine assessments
+also execute a package probe in a disposable container with the application
+entrypoint bypassed. The action sets up QEMU for foreign platforms when that
+probe is enabled. Candidates, including PR candidates, never execute it.
 The optional Docker Hub credentials authenticate Scout's backend. Private-image
 registry login remains the caller's responsibility. Published scans require
 `kind: published` and an image reference containing a real registry digest.
@@ -270,7 +274,8 @@ creates no duplicate on unchanged findings, and edits existing issues only when
 substantive details change. Human text outside its marked body section is
 preserved. Manual closures opt out of automatic reopening. Recurrence can reopen
 an issue resolved by automation, with the last closure's actor checked through
-issue events. Only complete current published-image scans resolve issues.
+issue events. Resolution additionally requires published package evidence and
+two complete assessments from distinct runs at least six hours apart.
 
 `dry-run` defaults to `true`, requires Issues read access, and performs no writes.
 Activation with `dry-run: 'false'` requires the caller's repository-scoped
@@ -297,8 +302,86 @@ message without repeating issue creation. Upload reports with
 Code Scanning uploads. It retains every finding, package and fixed-version
 property, and the primary file location. GitHub displays only the primary location,
 and Scout's full package file lists can exceed ingestion limits. The original
-`scout.sarif` remains unchanged as an artifact. Automated upgrades continue to own remediation; this tool does not
-alter locks, dispatch upgrades, or verify repository availability of fixes.
+`scout.sarif` remains unchanged as an artifact. Automated upgrades continue to
+own remediation; this tool does not alter locks or dispatch upgrades.
+
+### Fix availability and issue tracking
+
+Schema-2 scan reports include an OS package inventory and its hash, source and
+binary package identities, scanner versions and configuration, and Trivy DB
+metadata when available. Scout's advisory snapshot is recorded as unavailable
+when the service does not expose one. A new download or a fresh SBOM cache is
+not evidence of a new advisory snapshot. Reports older than 24 hours, or dated
+more than five minutes in the future, cannot update issues.
+
+Published Alpine scans check the matching branch's main/community security
+advisories, then refresh the image's configured package repositories in a
+disposable container. The probe uses the image's APK version comparison and
+simulates upgrades under its existing world constraints. It does not install
+packages, relax pins, add repositories, or change distribution branches.
+Repository warnings, fetch failures and incomplete evidence produce unknown
+availability, including when APK returns exit code zero. Checks retain repository
+and world-file hashes instead of exposing repository URLs or credentials.
+
+Issues distinguish scanner-advertised fixes from Alpine vendor fixes and from
+packages actually offered by the configured repositories. Per-platform rows
+show whether a fix is unavailable, installable, or blocked by pins, dependencies
+or inherited-base constraints. An installable package does not establish that
+the normal build will consume it: the issue says that build input updates and
+publication remain pending. A scanner/vendor disagreement remains visible.
+The lookup handles source advisories that apply to installed binary subpackages.
+
+Distroless/Debian images and bundled application dependencies retain their
+scanner evidence and explicitly report that a fixed base or application rebuild
+is needed. This release does not claim to verify their update availability.
+Alpine Trivy coverage does not support unfixed vulnerabilities, so a clean Trivy
+report cannot cancel a positive Scout finding. See the
+[Trivy Alpine coverage documentation](https://trivy.dev/docs/latest/guide/coverage/os/alpine/).
+
+`check-fix-availability` defaults to `true` for the scan action; only published
+images run the probe. Set it to `'false'` for reporting without runtime probes.
+The `availability-status` output is `complete`, `unknown`, or `unsupported`,
+independent of `report-status` and `kev-status`. Availability errors appear in
+artifacts and summaries; the aggregate reporting action exits 2 when enrichment
+fails. They do not introduce another publication gate or change KEV enforcement.
+
+An existing issue continues to track lower severities. Missing findings keep
+the issue open for review when the package version is unchanged or a fix is
+unverified. Automatic closure requires all of the following:
+
+- Every required variant/platform has complete current scanner coverage.
+- Complete published inventories prove removal of the previously identified
+  binary/source package, or changed package versions satisfying Alpine vendor
+  fixed-version evidence. Changing an unrelated image layer is insufficient.
+- Two distinct workflow runs assess the same published platform images,
+  inventories and scanner configuration, at least six hours apart. Reruns and
+  additional scans inside that interval do not count as confirmation.
+
+New detection resets confirmation. Incomplete assessments and changes to the
+published images or reporting scope invalidate pending confirmation. An advisory
+withdrawal or corrected match without package remediation requires manual review.
+Intentional target removal is a scope change, not proof that a package was fixed.
+Human reopening invalidates earlier automatic resolution evidence.
+
+The issue keeps a bounded hidden tracking block, the last five material
+transitions, and links to transition evidence. Human notes remain outside the
+managed block. Identical assessments do not refresh body timestamps or post
+comments. On an incomplete scan, the issue retains its last known exposure and
+shows that coverage failed. Previously detected rows are labelled as historical
+when a clean assessment is awaiting confirmation or review.
+
+Schema-1 reports are accepted for migration but cannot supply inventory evidence
+for automatic closure. Existing issues retain their ownership markers and
+identities; a new positive assessment seeds tracking state. A legacy issue absent
+from the first upgraded scan stays open for review. Invalid tracking state stops
+reconciliation instead of creating a duplicate or discarding evidence.
+
+Upgrade both scan and report actions together using an actual published release.
+The previous reporter cannot consume schema-2 reports. Ensure all reporting
+workflows for a scope have upgraded, and handle queued or rerun workflows using
+older action releases before activation: an older reporter still uses its older
+closure policy. Start with dry-run results, then adopt through Renovate in Alpine,
+qBittorrent and Autoscan while preserving each repository's complete target set.
 
 ## Release policy
 

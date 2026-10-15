@@ -22,6 +22,9 @@ inputs:
   scout-enabled:
     description: Enable Scout; may be disabled only for candidates such as untrusted PRs
     default: 'true'
+  check-fix-availability:
+    description: Verify Alpine fixes in disposable published-image containers; candidates never execute this probe
+    default: 'true'
   github-token:
     description: Token for authenticated read-only scanner release downloads
     default: ${{ github.token }}
@@ -41,9 +44,15 @@ outputs:
   kev-status:
     description: clear, found, or unknown
     value: ${{ steps.scan.outputs.kev-status }}
+  availability-status:
+    description: complete, unknown, or unsupported; independent of scanner and KEV results
+    value: ${{ steps.scan.outputs.availability-status }}
 runs:
   using: composite
   steps:
+    - name: Enable published-image package probes on foreign platforms
+      if: ${{ inputs.kind == 'published' && inputs.check-fix-availability == 'true' }}
+      uses: docker/setup-qemu-action@v4.3.0
     - name: Scan immutable container bytes
       id: scan
       shell: bash
@@ -56,6 +65,7 @@ runs:
         SECURITY_OUTPUT: ${{ inputs.output-directory }}
         SECURITY_ENFORCE_KEV: ${{ inputs.enforce-kev }}
         SECURITY_SCOUT_ENABLED: ${{ inputs.scout-enabled }}
+        SECURITY_CHECK_FIX_AVAILABILITY: ${{ inputs.check-fix-availability }}
         DOCKER_SCOUT_HUB_USER: ${{ inputs.dockerhub-user }}
         DOCKER_SCOUT_HUB_PASSWORD: ${{ inputs.dockerhub-password }}
         # renovate: datasource=github-releases depName=aquasecurity/trivy

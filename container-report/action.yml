@@ -26,6 +26,9 @@ outputs:
   report-status:
     description: complete or incomplete
     value: ${{ steps.report.outputs.report-status }}
+  availability-status:
+    description: complete, unknown, or unsupported across the assessed targets
+    value: ${{ steps.report.outputs.availability-status }}
 runs:
   using: composite
   steps:

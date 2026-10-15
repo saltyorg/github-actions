@@ -1,12 +1,15 @@
 """Automation-owned vulnerability issues with reconciled, bounded writes."""
+
 from __future__ import annotations
 
 import json
 import re
+from typing import Protocol
 from urllib.parse import urlencode
 
 from .github import GitHubClient
 from .transport import AmbiguousRequestError, GitHubTransport
+from .container_tracking import STATUSES, evolve, read_state, state_comment
 
 START = "<!-- salty-container-security:start -->"
 END = "<!-- salty-container-security:end -->"
@@ -14,9 +17,21 @@ MARKER = re.compile(r"<!-- salty-container-security:(\{[^\n]*\}) -->")
 BOT = "github-actions[bot]"
 
 
+class IssueStore(Protocol):
+    repository: str
+
+    def list_issues(self) -> list[dict]: ...
+    def closed_by_automation(self, number: int) -> bool: ...
+    def write(self, action: dict) -> dict: ...
+
+
 def issue_marker(issue: dict) -> dict | None:
     user = issue.get("user")
-    if "pull_request" in issue or not isinstance(user, dict) or user.get("login") != BOT:
+    if (
+        "pull_request" in issue
+        or not isinstance(user, dict)
+        or user.get("login") != BOT
+    ):
         return None
     body = issue.get("body") or ""
     if not isinstance(body, str):
@@ -28,9 +43,14 @@ def issue_marker(issue: dict) -> dict | None:
         marker = json.loads(markers[0])
     except ValueError:
         return None
-    if (not isinstance(marker, dict) or set(marker) != {"schema", "scope", "key", "resolved"}
-            or marker["schema"] != 1 or type(marker["resolved"]) is not bool
-            or not isinstance(marker["scope"], str) or not isinstance(marker["key"], str)):
+    if (
+        not isinstance(marker, dict)
+        or set(marker) != {"schema", "scope", "key", "resolved"}
+        or marker["schema"] != 1
+        or type(marker["resolved"]) is not bool
+        or not isinstance(marker["scope"], str)
+        or not isinstance(marker["key"], str)
+    ):
         return None
     return marker
 
@@ -51,18 +71,36 @@ class IssueClient:
         results = []
         page = 1
         while True:
-            query = urlencode({"state": "all", "per_page": 100, "page": page,
-                               "sort": "created", "direction": "asc"})
-            payload = self.transport.get_json(f"/repos/{self.repository}/issues?{query}")
-            if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+            query = urlencode(
+                {
+                    "state": "all",
+                    "per_page": 100,
+                    "page": page,
+                    "sort": "created",
+                    "direction": "asc",
+                }
+            )
+            payload = self.transport.get_json(
+                f"/repos/{self.repository}/issues?{query}"
+            )
+            if not isinstance(payload, list) or any(
+                not isinstance(row, dict) for row in payload
+            ):
                 raise ValueError("GitHub issues response must be an array of objects")
             for row in payload:
                 if "pull_request" in row:
                     continue
-                if (type(row.get("number")) is not int or row["number"] < 1
-                        or row.get("state") not in {"open", "closed"}
-                        or (row.get("body") is not None and not isinstance(row["body"], str))):
-                    raise ValueError("GitHub issue response has invalid identity, state, or body")
+                if (
+                    type(row.get("number")) is not int
+                    or row["number"] < 1
+                    or row.get("state") not in {"open", "closed"}
+                    or (
+                        row.get("body") is not None and not isinstance(row["body"], str)
+                    )
+                ):
+                    raise ValueError(
+                        "GitHub issue response has invalid identity, state, or body"
+                    )
                 results.append(row)
             if len(payload) < 100:
                 return results
@@ -72,13 +110,20 @@ class IssueClient:
         page, last_closure = 1, None
         while True:
             payload = self.transport.get_json(
-                f"/repos/{self.repository}/issues/{number}/events?per_page=100&page={page}")
-            if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
-                raise ValueError("GitHub issue events response must be an array of objects")
+                f"/repos/{self.repository}/issues/{number}/events?per_page=100&page={page}"
+            )
+            if not isinstance(payload, list) or any(
+                not isinstance(row, dict) for row in payload
+            ):
+                raise ValueError(
+                    "GitHub issue events response must be an array of objects"
+                )
             for event in payload:
                 if event.get("event") == "closed":
                     actor = event.get("actor")
-                    last_closure = actor.get("login") if isinstance(actor, dict) else None
+                    last_closure = (
+                        actor.get("login") if isinstance(actor, dict) else None
+                    )
             if len(payload) < 100:
                 return last_closure == BOT
             page += 1
@@ -91,23 +136,37 @@ class IssueClient:
         for attempt in range(4):
             try:
                 result = self.transport.send_json(path, method, payload)
-                if (not isinstance(result, dict) or type(result.get("number")) is not int
-                        or result["number"] < 1 or any(result.get(key) != value
-                                                      for key, value in payload.items()
-                                                      if key != "state_reason")):
-                    raise AmbiguousRequestError("GitHub issue write returned no issue number")
+                if (
+                    not isinstance(result, dict)
+                    or type(result.get("number")) is not int
+                    or result["number"] < 1
+                    or any(
+                        result.get(key) != value
+                        for key, value in payload.items()
+                        if key != "state_reason"
+                    )
+                ):
+                    raise AmbiguousRequestError(
+                        "GitHub issue write returned no issue number"
+                    )
                 return result
             except AmbiguousRequestError as error:
                 # A POST is never blindly repeated, even after a server error.
                 # Read retries handle temporarily unavailable reconciliation.
-                matches = [row for row in self.list_issues()
-                           if (marker := issue_marker(row)) and marker["key"] == action["key"]
-                           and marker["scope"] == action["scope"]]
+                matches = [
+                    row
+                    for row in self.list_issues()
+                    if (marker := issue_marker(row))
+                    and marker["key"] == action["key"]
+                    and marker["scope"] == action["scope"]
+                ]
                 if number:
                     matches = [row for row in matches if row.get("number") == number]
-                if len(matches) == 1 and all(matches[0].get(key) == value
-                                            for key, value in payload.items()
-                                            if key != "state_reason"):
+                if len(matches) == 1 and all(
+                    matches[0].get(key) == value
+                    for key, value in payload.items()
+                    if key != "state_reason"
+                ):
                     return matches[0]
                 if not number or len(matches) != 1 or attempt == 3:
                     raise AmbiguousRequestError(
@@ -117,101 +176,323 @@ class IssueClient:
                 # PATCH sets an exact desired state. Replay only after finding
                 # the same owned issue, without an intervening body/state edit.
                 current = matches[0]
-                if (current.get("body") != action["before_body"] or current.get("state") != action["before_state"]
-                        or current.get("title") != action["before_title"]):
-                    raise AmbiguousRequestError("Issue changed during reconciliation; refusing to overwrite")
-                self.transport._sleep(2 ** attempt)
+                if (
+                    current.get("body") != action["before_body"]
+                    or current.get("state") != action["before_state"]
+                    or current.get("title") != action["before_title"]
+                ):
+                    raise AmbiguousRequestError(
+                        "Issue changed during reconciliation; refusing to overwrite"
+                    )
+                self.transport._sleep(2**attempt)
         raise AssertionError("unreachable")
 
 
-def managed_body(scope: str, group: dict, *, resolved: bool = False) -> str:
+def tracking_lines(tracking: dict, repository: str = "") -> list[str]:
+    lines = ["", state_comment(tracking)]
+    if tracking.get("verification"):
+        lines.extend(["", "Published remediation evidence:"])
+        for target in tracking["verification"]:
+            lines.append(
+                f"- {target['name']} / {target['platform']}: {target['reason']}; "
+                f"`{target['image']}`; inventory `{target['inventory_sha256']}`."
+            )
+            for package in target.get("packages", []):
+                lines.append(f"  Package `{package['name']}={package['version']}`.")
+    evidence = tracking.get("evidence", {})
+    if evidence.get("at"):
+        lines.append(f"Evidence for this state change: {evidence['at']}.")
+        if repository and evidence.get("run_id", "").isdigit():
+            lines.append(
+                f"[Assessment run](https://github.com/{repository}/actions/runs/{evidence['run_id']})."
+            )
+    if tracking.get("history"):
+        lines.extend(["", "Recent tracking transitions:"])
+        for entry in tracking["history"]:
+            lines.append(f"- {entry['at'] or 'Legacy assessment'}: {entry['status']}.")
+    return lines
+
+
+def managed_body(
+    scope: str,
+    group: dict,
+    *,
+    resolved: bool = False,
+    tracking: dict | None = None,
+    repository: str = "",
+) -> str:
     marker = {"schema": 1, "scope": scope, "key": group["key"], "resolved": resolved}
-    lines = [START, "<!-- salty-container-security:" + json.dumps(marker, separators=(",", ":")) + " -->",
-             f"## {group['id']} in {group['package']}", "",
-             "Status: " + ("No longer detected in the assessed published images." if resolved else
-                            "Detected in published images. Automated upgrades remain enabled."), "",
-             "| Image | Platform | Package version | Severity | Scanner | Advertised fix |",
-             "| --- | --- | --- | --- | --- | --- |"]
+    lines = [
+        START,
+        "<!-- salty-container-security:"
+        + json.dumps(marker, separators=(",", ":"))
+        + " -->",
+        f"## {group['id']} in {group['package']}",
+        "",
+        "Status: "
+        + (
+            STATUSES[tracking["status"]]
+            if tracking
+            else "No longer detected in the assessed published images."
+            if resolved
+            else "Detected in published images. Automated upgrades remain enabled."
+        ),
+        "",
+    ]
+    if tracking and tracking["status"] not in {"detected", "incomplete"}:
+        lines.extend(["Last detected observations and availability at that time:", ""])
+    elif tracking:
+        targets = {(item["name"], item["platform"]) for item in group["observations"]}
+        installable = {
+            (item["name"], item["platform"])
+            for item in group["observations"]
+            if item.get("availability", {}).get("status") == "installable"
+        }
+        if installable:
+            extent = (
+                "all currently detected targets"
+                if installable == targets
+                else "some affected targets"
+            )
+            lines.extend(
+                [
+                    f"Package fixes are installable on {extent}. Build input updates and publication are still required.",
+                    "",
+                ]
+            )
+    lines.extend(
+        [
+            "| Image | Platform | Package version | Severity | Scanner | Advertised fix | Vendor fix | Availability / next action |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
     for item in group["observations"]:
+
         def cell(value):
             return str(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
-        lines.append("| " + " | ".join(cell(item[key]) for key in
-                                       ("name", "platform", "version", "severity", "source", "fix")) + " |")
+
+        availability = item.get("availability", {})
+        description = {
+            "not_available": "Fix not yet in configured repositories",
+            "blocked": "Upgrade blocked by pins, dependencies or base constraints",
+            "installable": "Package fix installable; build input update pending",
+            "fixed": "Vendor reports this package version fixed; scanner disagreement requires review",
+            "unsupported": "Awaiting a fixed base image or application rebuild; availability unverified",
+            "unknown": "Availability unknown; check assessment errors",
+        }.get(
+            availability.get("status"),
+            "Fix advertised; availability unverified"
+            if item["fix"]
+            else "No fix reported",
+        )
+        if availability.get("candidates"):
+            description += "; candidate: " + ", ".join(availability["candidates"])
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    *(
+                        cell(item[key])
+                        for key in (
+                            "name",
+                            "platform",
+                            "version",
+                            "severity",
+                            "source",
+                            "fix",
+                        )
+                    ),
+                    cell(
+                        ", ".join(availability.get("versions", []))
+                        if availability.get("source") == "Alpine secdb"
+                        else ""
+                    ),
+                    cell(description),
+                ]
+            )
+            + " |"
+        )
     if group["kev"]:
-        lines.extend(["", "This finding is in CISA KEV and blocks candidate publication."])
-    lines.extend(["", "Repository availability of advertised fixes is not verified by this report.", "",
-                  "Assessed image digests:"])
+        lines.extend(
+            ["", "This finding is in CISA KEV and blocks candidate publication."]
+        )
+    lines.extend(
+        [
+            "",
+            "Availability is verified only where explicitly stated. A clean scanner does not cancel another scanner's finding.",
+            "",
+            "Assessed image digests:",
+        ]
+    )
     for image in sorted(group["images"]):
         lines.append(f"- `{image}`")
     urls = sorted({item["url"] for item in group["observations"] if item["url"]})
     if urls:
         lines.extend(["", "Advisories:"] + [f"- {url}" for url in urls])
-    # Do not put scan timestamps/run URLs in the managed body: otherwise every
-    # clean repeat scan would edit the issue. Those remain in report artifacts.
-    lines.extend(["", "Only complete scans of this reporting scope can resolve this issue.", END])
+    # Only state transitions carry timestamps and run URLs; identical scans stay quiet.
+    if tracking:
+        lines.extend(tracking_lines(tracking, repository))
+    lines.extend(
+        [
+            "",
+            "Resolution requires published package evidence and two complete assessments at least six hours apart.",
+            END,
+        ]
+    )
     body = "\n".join(lines)
     if len(body) > 60000:
         raise ValueError("vulnerability issue body exceeds supported size")
     return body
 
 
-def plan_issues(scope: str, groups: dict, issues: list[dict], *, complete: bool,
-                client: IssueClient, resolution_images: list[str] | None = None) -> list[dict]:
+def plan_issues(
+    scope: str,
+    groups: dict,
+    issues: list[dict],
+    *,
+    complete: bool,
+    client: IssueStore,
+    assessment: dict | None = None,
+) -> list[dict]:
     owned = {}
     for issue in issues:
         marker = issue_marker(issue)
         if marker and marker["scope"] == scope:
             if marker["key"] in owned:
-                raise ValueError("duplicate owned vulnerability issues require manual reconciliation")
+                raise ValueError(
+                    "duplicate owned vulnerability issues require manual reconciliation"
+                )
             owned[marker["key"]] = issue
     actions = []
-    for key, group in sorted(groups.items()):
+    for key in sorted(set(groups) | set(owned)):
+        group = groups.get(key)
         existing = owned.get(key)
-        body = managed_body(scope, group)
-        title = f"{group['id']}: {group['package']} ({group['distro']})"
+        if existing is None and group is None:
+            continue
+        if group is None and (existing is None or existing.get("state") != "open"):
+            continue
+        if existing and existing.get("state") == "closed":
+            marker = issue_marker(existing)
+            if (
+                not marker
+                or not marker["resolved"]
+                or not client.closed_by_automation(existing["number"])
+            ):
+                continue  # Human closure is an explicit opt-out.
+        if existing is None and not any(
+            item["kev"] or item["severity"] in {"HIGH", "CRITICAL"}
+            for item in (group or {})["observations"]
+        ):
+            continue
+        previous = read_state(existing["body"]) if existing else None
+        if (
+            previous
+            and existing
+            and (issue_marker(existing) or {}).get("resolved")
+            != (previous["status"] == "resolved")
+        ):
+            raise ValueError("tracking resolution state disagrees with issue marker")
+        if previous and previous.get("group") and previous["group"]["key"] != key:
+            raise ValueError("tracking state does not match issue identity")
+        if (
+            existing
+            and existing["state"] == "open"
+            and (issue_marker(existing) or {}).get("resolved")
+            and previous
+            and group is None
+        ):
+            # A manually reopened issue must not immediately reclose from old proof.
+            previous.update(status="review", pending=None, affected=[])
+        tracking = evolve(previous, group, assessment, complete=complete)
+        resolved = tracking["status"] == "resolved"
+        rendered = group or tracking.get("group")
+        title = (
+            f"{rendered['id']}: {rendered['package']} ({rendered['distro']})"
+            if rendered
+            else (existing or {})["title"]
+        )
+        if rendered:
+            body = managed_body(
+                scope,
+                rendered,
+                resolved=resolved,
+                tracking=tracking,
+                repository=client.repository,
+            )
+        else:
+            # Legacy issues without a trustworthy inventory remain open. Preserve
+            # their original finding details until a new positive scan seeds state.
+            original = (existing or {})["body"].split(START, 1)[1].split(END, 1)[0]
+            original = re.sub(
+                r"<!-- tracking-view:start -->.*?<!-- tracking-view:end -->",
+                "",
+                original,
+                flags=re.DOTALL,
+            ).rstrip()
+            marker = {"schema": 1, "scope": scope, "key": key, "resolved": resolved}
+            original = MARKER.sub(
+                "<!-- salty-container-security:"
+                + json.dumps(marker, separators=(",", ":"))
+                + " -->",
+                original,
+            )
+            original = re.sub(
+                r"^Status:.*$",
+                "Status: " + STATUSES[tracking["status"]],
+                original,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            if "Last detected observations:" not in original:
+                original = original.replace(
+                    "\n| Image |", "\nLast detected observations:\n\n| Image |", 1
+                )
+            body = (
+                START
+                + original
+                + "\n<!-- tracking-view:start -->\n"
+                + STATUSES[tracking["status"]]
+                + "\n"
+                + "\n".join(tracking_lines(tracking, client.repository))
+                + "\n<!-- tracking-view:end -->\n"
+                + END
+            )
         if len(title) > 256:
             raise ValueError("vulnerability issue title exceeds supported size")
         payload = {"title": title, "body": body}
         if existing:
             marker = issue_marker(existing)
+            if marker is None:
+                raise ValueError("issue ownership changed during planning")
             if existing.get("state") == "closed":
-                if not marker["resolved"] or not client.closed_by_automation(existing["number"]):
-                    continue  # Human closure is an explicit opt-out.
                 payload["state"] = "open"
                 operation = "reopen"
             else:
                 operation = "update"
+                if resolved:
+                    operation = "close"
+                    payload.update(state="closed", state_reason="completed")
             payload["body"] = replace_managed_body(existing["body"], body)
             if all(existing.get(field) == value for field, value in payload.items()):
                 continue
         else:
             operation = "create"
-            if group.get("run_url"):
-                payload["body"] += f"\n\nFirst detected in [this workflow run]({group['run_url']})."
-        actions.append({"operation": operation, "key": key, "scope": scope,
-                        "number": existing["number"] if existing else None,
-                        "before_body": existing.get("body") if existing else None,
-                        "before_state": existing.get("state") if existing else None,
-                        "before_title": existing.get("title") if existing else None,
-                        "payload": payload})
-    if complete:
-        for key, existing in sorted(owned.items()):
-            if key in groups or existing.get("state") != "open":
-                continue
-            marker = issue_marker(existing)
-            marker["resolved"] = True
-            body = MARKER.sub("<!-- salty-container-security:" + json.dumps(
-                marker, separators=(",", ":")) + " -->", existing["body"])
-            body = body.replace("Status: Detected in published images. Automated upgrades remain enabled.",
-                                "Status: No longer detected in the assessed published images.")
-            if resolution_images:
-                evidence = "\n\nResolution verified against these current published images:\n" + "\n".join(
-                    f"- `{image}`" for image in sorted(set(resolution_images))) + "\n"
-                first, suffix = body.split(END, 1)
-                body = first + evidence + END + suffix
-            actions.append({"operation": "close", "key": key, "scope": scope,
-                            "number": existing["number"], "before_body": existing["body"],
-                            "before_state": existing["state"],
-                            "before_title": existing.get("title"),
-                            "payload": {"state": "closed", "state_reason": "completed", "body": body}})
+            if group and group.get("run_url"):
+                payload["body"] += (
+                    f"\n\nFirst detected in [this workflow run]({group['run_url']})."
+                )
+        if len(payload["body"]) > 60000:
+            raise ValueError("vulnerability issue body exceeds supported size")
+        actions.append(
+            {
+                "operation": operation,
+                "key": key,
+                "scope": scope,
+                "number": existing["number"] if existing else None,
+                "before_body": existing.get("body") if existing else None,
+                "before_state": existing.get("state") if existing else None,
+                "before_title": existing.get("title") if existing else None,
+                "payload": payload,
+            }
+        )
     return actions
