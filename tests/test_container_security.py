@@ -228,6 +228,14 @@ class ParserTests(unittest.TestCase):
 
 
 class RetryTests(unittest.TestCase):
+    def test_stateful_probe_timeout_is_not_replayed(self):
+        execute = unittest.mock.Mock(side_effect=subprocess.TimeoutExpired("docker", 1))
+        with self.assertRaises(OperationError):
+            CommandRunner(
+                execute=execute, sleep=lambda _: self.fail("unexpected retry")
+            )(["docker", "run", "--name", "probe"], attempts=1)
+        self.assertEqual(execute.call_count, 1)
+
     def test_subprocess_transient_errors_retry_and_eventually_succeed(self):
         execute = unittest.mock.Mock(
             side_effect=[

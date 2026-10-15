@@ -59,8 +59,12 @@ class CommandRunner:
         self.execute = execute
         self.sleep = sleep
 
-    def __call__(self, command: list[str], *, timeout: int = 600) -> str:
-        for attempt in range(4):
+    def __call__(
+        self, command: list[str], *, timeout: int = 600, attempts: int = 4
+    ) -> str:
+        if not 1 <= attempts <= 4:
+            raise ValueError("operation attempts must be between one and four")
+        for attempt in range(attempts):
             try:
                 result = self.execute(
                     command,
@@ -81,7 +85,7 @@ class CommandRunner:
                 raise OperationError(
                     f"could not start {command[0]}: {error.strerror}"
                 ) from error
-            if not retry or attempt == 3:
+            if not retry or attempt == attempts - 1:
                 raise OperationError(f"{Path(command[0]).name}: {detail}")
             retry_after = re.search(r"retry[- ]after\s*[:=]?\s*(\d+)", detail, re.I)
             delay = (

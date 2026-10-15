@@ -330,6 +330,11 @@ or inherited-base constraints. An installable package does not establish that
 the normal build will consume it: the issue says that build input updates and
 publication remain pending. A scanner/vendor disagreement remains visible.
 The lookup handles source advisories that apply to installed binary subpackages.
+Advisories and source/binary aliases share identical package/version probes,
+so the request budget applies to distinct comparisons. Already-fixed versions
+skip repository-policy and upgrade-resolution work. A timed-out container probe
+is cleaned up without replaying the stateful Docker command; read-only downloads
+and registry checks retain their existing retry policy.
 
 Distroless/Debian images and bundled application dependencies retain their
 scanner evidence and explicitly report that a fixed base or application rebuild

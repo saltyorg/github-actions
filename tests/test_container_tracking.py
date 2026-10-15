@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+
+# Run the repository-owned probe with a controlled fake APK executable.
+import subprocess  # nosec B404
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from .test_container_security import (
     BOT,
@@ -18,10 +23,16 @@ from .test_container_security import (
 )
 from salty_actions.container_findings import scout_findings
 from salty_actions.container_issues import issue_marker
-from salty_actions.container_packages import assess, digest, inventory, vendor_fixes
+from salty_actions.container_packages import (
+    PROBE,
+    assess,
+    digest,
+    inventory,
+    vendor_fixes,
+)
 from salty_actions.container_report import reconcile
 from salty_actions.container_scan import scan
-from salty_actions.container_tools import OperationError
+from salty_actions.container_tools import CommandRunner, OperationError
 from salty_actions.container_tracking import read_state
 
 
@@ -336,6 +347,89 @@ class LifecycleTests(unittest.TestCase):
 
 
 class PackageEvidenceTests(unittest.TestCase):
+    def test_already_fixed_versions_do_not_query_repository_policy(self):
+        fake = """#!/bin/sh
+case " $* " in
+  *" --print-arch "*) echo x86_64 ;;
+  *" --version "*) echo apk-fixture ;;
+  *" update "*) echo OK ;;
+  *" info --installed "*) exit 0 ;;
+  *" version -t "*) echo '>' ;;
+  *" policy "*) echo policy >> "$PROBE_LOG"; exit 1 ;;
+  *) exit 1 ;;
+esac
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            apk = root / "apk"
+            apk.write_text(fake)
+            apk.chmod(0o755)
+            script = PROBE.replace(
+                "cache=/tmp/salty-apk-indexes", f'cache="{root / "cache"}"'
+            )
+            # The only shell program is the checked-in static probe under test.
+            result = subprocess.run(  # nosec B603
+                [
+                    "/bin/sh",
+                    "-ec",
+                    script,
+                    "apk-fix-probe",
+                    "x86_64",
+                    "a" * 64,
+                    "python3",
+                    "3.14.8-r0",
+                    "3.14.7-r0",
+                ],
+                env={
+                    "PATH": str(root) + os.pathsep + os.defpath,
+                    "PROBE_LOG": str(root / "policy-log"),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            self.assertIn("\tfixed", result.stdout)
+            self.assertFalse((root / "policy-log").exists())
+
+    def test_many_advisories_share_one_package_probe(self):
+        original_vendor = self.vendor
+
+        def large_vendor(repository="main"):
+            data = original_vendor(repository)
+            data["packages"][0]["pkg"]["secfixes"]["3.14.8-r0"] = [
+                f"CVE-2026-{50000 + index}" for index in range(2001)
+            ]
+            return data
+
+        with patch.object(self, "vendor", side_effect=large_vendor):
+            result = self.run_probe(status="fixed")
+        self.assertEqual(result["status"], "complete", result["errors"])
+        self.assertEqual(len(result["remediated"]), 2001)
+        calls = [
+            command for command in self.probe_calls if command[:2] == ["docker", "run"]
+        ]
+        arguments = calls[0][calls[0].index("apk-fix-probe") + 2 :]
+        self.assertEqual(len(arguments) // 4, 1)
+
+    def test_unique_package_version_budget_is_still_enforced(self):
+        original_vendor = self.vendor
+
+        def large_vendor(repository="main"):
+            data = original_vendor(repository)
+            data["packages"][0]["pkg"]["secfixes"] = {
+                f"3.14.{index}-r0": ["CVE-2026-19445"] for index in range(2001)
+            }
+            return data
+
+        with patch.object(self, "vendor", side_effect=large_vendor):
+            result = self.run_probe()
+        self.assertEqual(result["status"], "unknown")
+        self.assertIn("exceeds supported request count", " ".join(result["errors"]))
+        self.assertFalse(
+            any(command[:2] == ["docker", "run"] for command in self.probe_calls)
+        )
+
     def vendor(self, repository="main"):
         return {
             "distroversion": "v3.24",
@@ -359,13 +453,26 @@ class PackageEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another branch"):
             vendor_fixes(self.vendor(), "3.23", "main")
 
-    def run_probe(self, *, status="installable", fail=False, source_split=False):
+    def run_probe(
+        self, *, status="installable", fail=False, source_split=False, timed_out=False
+    ):
         packages = package_inventory()
         if status == "fixed":
             packages = package_inventory("3.14.8-r0")
         if source_split:
             packages["packages"][0]["name"] = "python3-pyc"
         observations = scout_findings(scout_report())
+        self.probe_executor = Mock(
+            side_effect=[
+                subprocess.TimeoutExpired("docker", 240),
+                subprocess.CompletedProcess(
+                    [], 1, "", "Conflict: container name already in use"
+                ),
+            ]
+        )
+        command_runner = CommandRunner(
+            execute=self.probe_executor, sleep=lambda _: None
+        )
 
         def runner(command, **kwargs):
             self.probe_calls.append(command)
@@ -381,6 +488,8 @@ class PackageEvidenceTests(unittest.TestCase):
                 return ""
             if fail:
                 raise OperationError("repository network failure")
+            if timed_out:
+                return command_runner(command, **kwargs)
             arguments = command[command.index("apk-fix-probe") + 2 :]
             responses = ["APK\tapk-tools 3.0.8"]
             for index in range(0, len(arguments), 4):
@@ -411,6 +520,18 @@ class PackageEvidenceTests(unittest.TestCase):
             self.assertEqual(result["status"], "complete")
             self.assertEqual(result["fixes"][key]["status"], status)
             self.assertEqual(key in result["remediated"], status == "fixed")
+
+    def test_probe_timeout_cleans_up_without_retry_or_masking_the_failure(self):
+        result = self.run_probe(timed_out=True)
+        self.assertEqual(result["status"], "unknown")
+        self.assertIn("timed out", " ".join(result["errors"]))
+        self.assertEqual(self.probe_executor.call_count, 1)
+        self.assertTrue(
+            any(
+                command[:3] == ["docker", "rm", "--force"]
+                for command in self.probe_calls
+            )
+        )
 
     def test_split_binary_package_proves_source_package_fix(self):
         key = scout_findings(scout_report())[0]["key"]

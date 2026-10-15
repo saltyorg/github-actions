@@ -102,14 +102,22 @@ case "$refresh" in *WARNING:*|*ERROR:*) printf 'ERROR\trepository refresh incomp
 for path in /etc/apk/repositories /etc/apk/world /etc/apk/repositories.d/* "$cache"/*; do
     if test -f "$path"; then sha256sum "$path"; fi
 done | while read -r sum path; do printf 'INPUT\t%s\t%s\n' "$sum" "$path"; done
+last_package='' last_installed=''
 while test "$#" -gt 0; do
     key=$1 package=$2 installed=$3 fixed=$4
     shift 4
-    if ! apk --cache-dir "$cache" --no-network info --installed "$package=$installed" >/dev/null 2>&1; then
-        printf 'ERROR\tinstalled package inventory mismatch\n'; exit 0
+    if test "$package" != "$last_package" || test "$installed" != "$last_installed"; then
+        if ! apk --cache-dir "$cache" --no-network info --installed "$package=$installed" >/dev/null 2>&1; then
+            printf 'ERROR\tinstalled package inventory mismatch\n'; exit 0
+        fi
+        last_package=$package last_installed=$installed
     fi
     comparison=$(apk version -t "$installed" "$fixed")
     case "$comparison" in '<'|'='|'>') ;; *) exit 1 ;; esac
+    if test "$comparison" != '<'; then
+        printf 'CHECK\t%s\t%s\t%s\t\tfixed\n' "$key" "$fixed" "$comparison"
+        continue
+    fi
     candidate=''
     # policy includes the installed database; it is not a repository candidate.
     if ! policy=$(apk --cache-dir "$cache" --no-network policy "$package" 2>&1); then
@@ -123,9 +131,7 @@ while test "$#" -gt 0; do
         case "$(apk version -t "$version" "$fixed")" in '='|'>') candidate=$version ;; esac
     done
     status=not_available
-    if test "$comparison" != '<'; then
-        status=fixed
-    elif test -n "$candidate"; then
+    if test -n "$candidate"; then
         status=blocked
         if simulation=$(apk --cache-dir "$cache" --no-network upgrade --simulate "$package" 2>/dev/null); then
             selected=$(printf '%s\n' "$simulation" | awk -v p="$package" '
@@ -250,9 +256,9 @@ def assess(
         )
         if not request["vendor"] and item["fix"]:
             request["versions"].add(item["fix"])
-    arguments = []
+    probes: dict = {}
     expected = set()
-    owners = {}
+    owners: dict = {}
     for key, request in requests.items():
         for name in sorted(request["packages"]):
             package = by_name[name]
@@ -262,16 +268,22 @@ def assess(
                 or package["source_version"] != package["version"]
             ):
                 continue  # Unsupported source/binary version mapping cannot prove a fix.
-            probe_key = digest([key, name])
-            owners[probe_key] = key
             for version in sorted(request["versions"]):
                 if not VERSION.fullmatch(version):
                     continue
+                # Many advisories and source/binary aliases share one comparison.
+                probe_key = digest([name, package["version"], version])
+                owners.setdefault(probe_key, set()).add(key)
                 expected.add((probe_key, version))
-                arguments.extend([probe_key, name, package["version"], version])
+                probes[name, package["version"], version] = probe_key
     if len(expected) > 2000:
         result["errors"].append("Alpine fix assessment exceeds supported request count")
         return result
+    arguments = [
+        value
+        for (name, installed, fixed), key in sorted(probes.items())
+        for value in (key, name, installed, fixed)
+    ]
     architecture = {
         "linux/amd64": "x86_64",
         "linux/arm64": "aarch64",
@@ -310,6 +322,7 @@ def assess(
                 *arguments,
             ],
             timeout=240,
+            attempts=1,
         )
         (output / "apk-fix-probe.txt").write_text(raw)
         checked = {}
@@ -340,7 +353,7 @@ def assess(
             evidence = [
                 value
                 for (identity, _), value in checked.items()
-                if owners[identity] == key
+                if key in owners[identity]
             ]
             if (
                 len(evidence) != len(request["packages"]) * len(request["versions"])
