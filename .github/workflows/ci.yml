@@ -11,6 +11,23 @@ permissions:
   contents: read
 
 jobs:
+  container-platforms:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker with the containerd image store
+        uses: docker/setup-docker-action@v5.6.0
+        with:
+          set-host: true
+          daemon-config: |
+            {"features": {"containerd-snapshotter": true}}
+
+      - name: Check real multi-platform inspection and export
+        env:
+          SALTY_ACTIONS_DOCKER_TEST: '1'
+        run: python3 -m unittest tests.test_container_platforms -v
+
   test:
     runs-on: ubuntu-24.04
     steps:

@@ -213,7 +213,8 @@ unwritable output paths fail with exit code 2.
 Scout coverage. Published scans cannot disable Scout. Trusted publication must
 keep KEV enforcement enabled.
 
-The action requires Linux X64/ARM64, Python 3.11+, `gh`, `curl`, Docker, and enough disk
+The action requires Linux X64/ARM64, Python 3.11+, `gh`, `curl`, Docker API 1.49+
+with platform-aware image inspection and export, and enough disk
 space to export the image. The image platform can be `linux/amd64`, `linux/arm64`,
 or `linux/arm/v7`. Scanners read exported bytes. Published Alpine assessments
 also execute a package probe in a disposable container with the application
@@ -222,6 +223,19 @@ probe is enabled. Candidates, including PR candidates, never execute it.
 The optional Docker Hub credentials authenticate Scout's backend. Private-image
 registry login remains the caller's responsibility. Published scans require
 `kind: published` and an image reference containing a real registry digest.
+
+Inspection freezes the addressable local image ID, then validates and exports
+the requested platform using that ID. This supports both classic and containerd
+image stores, including a foreign platform loaded without the host platform.
+CI exercises a real containerd Docker daemon with a generated, offline OCI
+index for AMD64, ARM64 and ARM/v7. It checks foreign-only and populated caches,
+ARM64/v8 equivalence, and the architecture and identical archive bytes supplied
+to each scanner. Run this check locally against a disposable containerd daemon:
+
+```sh
+DOCKER_HOST=unix:///path/to/disposable/docker.sock \
+  SALTY_ACTIONS_DOCKER_TEST=1 python3 -m unittest tests.test_container_platforms -v
+```
 
 Retrying happens inside individual operations. Read-only commands retry transient
 network/server errors and timeouts up to four attempts, with exponential delay.

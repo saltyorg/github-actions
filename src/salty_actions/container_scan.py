@@ -6,14 +6,14 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .container_findings import obj, scout_findings, text, trivy_findings
-from .container_tools import CommandRunner, OperationError, install_tool, safe_error
+from .container_packages import assess, digest, inventory
 from .container_sarif import code_scanning_report
-from .container_packages import assess, inventory, digest
+from .container_tools import CommandRunner, OperationError, install_tool, safe_error
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 PLATFORM = re.compile(r"linux/(?:amd64|arm64(?:/v8)?|arm/v7)\Z")
@@ -123,7 +123,7 @@ def scan(
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
         "run_id": os.environ.get("GITHUB_RUN_ID", ""),
         "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "scanned_at": datetime.now(UTC).isoformat(),
         "image_id": "",
         "scanners": {},
         "findings": [],
@@ -176,6 +176,25 @@ def scan(
             image_id = metadata.get("Id")
             if not isinstance(image_id, str) or not DIGEST.fullmatch(image_id):
                 raise ValueError("image inspection returned no immutable image ID")
+            # Freeze the addressable index ID first. A platform-specific inspect
+            # can return a child manifest ID that Docker cannot save or run by ID.
+            metadata = obj(
+                json.loads(
+                    runner(
+                        [
+                            "docker",
+                            "image",
+                            "inspect",
+                            "--platform",
+                            target["platform"],
+                            image_id,
+                            "--format",
+                            "{{json .}}",
+                        ]
+                    )
+                ),
+                "platform image metadata",
+            )
             actual = f"{metadata.get('Os')}/{metadata.get('Architecture')}"
             variant = metadata.get("Variant")
             if variant:
@@ -189,7 +208,19 @@ def scan(
                 )
             report["image_id"] = image_id
             archive = work / "image.tar"
-            runner(["docker", "image", "save", "--output", str(archive), image_id])
+            # Keep export selection explicit when multiple platforms are cached.
+            runner(
+                [
+                    "docker",
+                    "image",
+                    "save",
+                    "--platform",
+                    target["platform"],
+                    "--output",
+                    str(archive),
+                    image_id,
+                ]
+            )
             # Both scanners and KEV evaluation read the same exported image.
             for engine, version in (("trivy", trivy_version), ("scout", scout_version)):
                 if engine == "scout" and not scout_enabled:
@@ -348,14 +379,19 @@ def main() -> int:
                     f"{report['report_status']}; KEV: {report['kev_status']}; "
                     f"{len(report['findings'])} scanner findings.\n"
                 )
-                for error in report["errors"]:
-                    stream.write(f"\nAssessment error: {error}\n")
+                stream.writelines(
+                    f"\nAssessment error: {error}\n" for error in report["errors"]
+                )
                 availability = report.get("availability", {})
                 stream.write(
                     f"\nFix availability: {availability.get('status', 'unknown')}.\n"
                 )
-                for message in availability.get("errors", []):
-                    stream.write(f"\nFix availability error: {safe_error(message)}\n")
+                stream.writelines(
+                    f"\nFix availability error: {safe_error(message)}\n"
+                    for message in availability.get("errors", [])
+                )
+        for error in report["errors"]:
+            print(f"Container assessment failed: {safe_error(error)}", file=sys.stderr)
         if enforce and report["kev_status"] != "clear":
             print(
                 f"KEV assessment blocks publication: {report['kev_status']}",
