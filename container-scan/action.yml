@@ -71,5 +71,5 @@ runs:
         # renovate: datasource=github-releases depName=aquasecurity/trivy
         TRIVY_VERSION: v0.74.0
         # renovate: datasource=github-releases depName=docker/scout-cli
-        SCOUT_VERSION: v1.26.0
+        SCOUT_VERSION: v1.27.0
       run: PYTHONPATH="$GITHUB_ACTION_PATH/../src" python3 -m salty_actions.container_scan
