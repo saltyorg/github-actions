@@ -3,18 +3,55 @@ from __future__ import annotations
 import io
 import sys
 import unittest
+from email.message import Message
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from salty_actions.github import GitHubClient
-from salty_actions.retry import AmbiguousRequestError
+from salty_actions.transport import AmbiguousRequestError
 
 from .http_fakes import FakeResponse, RecordingOpener
 
 
 class GitHubClientTests(unittest.TestCase):
+    def test_large_matrix_job_pages_avoid_gateway_errors_and_include_late_failures(
+        self,
+    ) -> None:
+        all_jobs = [
+            {"name": f"job-{index}", "conclusion": "success"} for index in range(177)
+        ]
+        all_jobs[-1] = {"name": "late-failure", "conclusion": "failure"}
+        requests: list[Request] = []
+
+        def opener(request: Request, timeout: int) -> FakeResponse:
+            requests.append(request)
+            query = parse_qs(urlsplit(request.full_url).query)
+            size, page = int(query["per_page"][0]), int(query["page"][0])
+            # Reproduces the live Sandbox attempt endpoint's 100-job HTTP 502.
+            if size > 30:
+                raise HTTPError(request.full_url, 502, "Bad Gateway", Message(), None)
+            return FakeResponse(
+                200,
+                {
+                    "total_count": len(all_jobs),
+                    "jobs": all_jobs[(page - 1) * size : page * size],
+                },
+            )
+
+        client = GitHubClient("fixture-token", opener=opener, sleep=lambda _: None)
+        jobs = client.list_run_jobs("saltyorg/Sandbox", 39713790919, 2)
+
+        self.assertEqual(jobs, all_jobs)
+        self.assertEqual(len(requests), 6)
+        self.assertEqual(jobs[-1]["conclusion"], "failure")
+        self.assertTrue(
+            all("/attempts/2/jobs?" in request.full_url for request in requests)
+        )
+
     def test_branch_pulls_include_closed_prs_and_paginate_encoded_head(self) -> None:
         first_page = [{"number": number} for number in range(1, 101)]
         opener = RecordingOpener(
@@ -31,12 +68,16 @@ class GitHubClientTests(unittest.TestCase):
         self.assertEqual(
             [request.full_url for request in opener.requests],
             [
-                "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
-                "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
-                "&per_page=100&page=1",
-                "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
-                "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
-                "&per_page=100&page=2",
+                (
+                    "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
+                    "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
+                    "&per_page=100&page=1"
+                ),
+                (
+                    "https://api.github.com/repos/saltyorg/Saltbox/pulls?"
+                    "state=all&head=balogan%3Afix%2Fsqlite%2Bwal%26journals"
+                    "&per_page=100&page=2"
+                ),
             ],
         )
 
@@ -61,13 +102,15 @@ class GitHubClientTests(unittest.TestCase):
                 opener = RecordingOpener([])
                 client = GitHubClient("fixture-token", opener=opener)
 
-                with self.assertRaises(ValueError):
-                    client.list_branch_pulls(target, source, branch)
+                self.assertRaises(
+                    ValueError, client.list_branch_pulls, target, source, branch
+                )
 
                 self.assertEqual(opener.requests, [])
 
     def test_branch_pulls_reject_malformed_responses(self) -> None:
-        for payload in ({"pulls": []}, [None]):
+        payloads: tuple[object, ...] = ({"pulls": []}, [None])
+        for payload in payloads:
             with self.subTest(payload=payload):
                 client = GitHubClient(
                     "fixture-token",
@@ -81,29 +124,41 @@ class GitHubClientTests(unittest.TestCase):
 
     def test_attempt_jobs_are_paginated_without_falling_back_to_latest(self) -> None:
         first_page = [
-            {"name": f"job-{index}", "conclusion": "success"} for index in range(100)
+            {"name": f"job-{index}", "conclusion": "success"} for index in range(30)
         ]
         second_page = [{"name": "saltbox-lint", "conclusion": "failure"}]
         opener = RecordingOpener(
             [
-                FakeResponse(200, {"total_count": 101, "jobs": first_page}),
-                FakeResponse(200, {"total_count": 101, "jobs": second_page}),
+                FakeResponse(200, {"total_count": 31, "jobs": first_page}),
+                FakeResponse(200, {"total_count": 31, "jobs": second_page}),
             ]
         )
         client = GitHubClient("secret-token", opener=opener, sleep=lambda _: None)
 
         jobs = client.list_run_jobs("saltyorg/Sandbox", 1234, 3)
 
-        self.assertEqual(len(jobs), 101)
+        self.assertEqual(len(jobs), 31)
         self.assertEqual(jobs[-1]["name"], "saltbox-lint")
         self.assertEqual(
             opener.requests[0].full_url,
-            "https://api.github.com/repos/saltyorg/Sandbox/actions/runs/1234/attempts/3/jobs?per_page=100&page=1",
+            "https://api.github.com/repos/saltyorg/Sandbox/actions/runs/1234/attempts/3/jobs?per_page=30&page=1",
         )
         self.assertEqual(
             opener.requests[1].full_url,
-            "https://api.github.com/repos/saltyorg/Sandbox/actions/runs/1234/attempts/3/jobs?per_page=100&page=2",
+            "https://api.github.com/repos/saltyorg/Sandbox/actions/runs/1234/attempts/3/jobs?per_page=30&page=2",
         )
+
+    def test_empty_job_page_before_total_fails_closed(self) -> None:
+        client = GitHubClient(
+            "fixture-token",
+            opener=RecordingOpener(
+                [FakeResponse(200, {"total_count": 177, "jobs": []})]
+            ),
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "pagination ended before total_count"
+        ):
+            client.list_run_jobs("saltyorg/Sandbox", 1234, 2)
 
     def test_rerun_is_one_post_to_failed_jobs_endpoint(self) -> None:
         opener = RecordingOpener([FakeResponse(201)])
@@ -133,13 +188,13 @@ class GitHubClientTests(unittest.TestCase):
             "https://api.github.com/example",
             503,
             "Service Unavailable",
-            {},
+            Message(),
             io.BytesIO(b"unavailable"),
         )
         opener = RecordingOpener(
             [error, FakeResponse(200, {"run_attempt": 2, "conclusion": "failure"})]
         )
-        sleeps: list[int] = []
+        sleeps: list[float] = []
         client = GitHubClient("secret-token", opener=opener, sleep=sleeps.append)
 
         result = client.get_run_attempt("saltyorg/Sandbox", 1234, 2)

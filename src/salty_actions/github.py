@@ -47,7 +47,8 @@ class GitHubClient:
         jobs: list[dict[str, object]] = []
         page = 1
         while True:
-            query = urlencode({"per_page": 100, "page": page})
+            # Large matrix attempts can return HTTP 502 for 100-job pages.
+            query = urlencode({"per_page": 30, "page": page})
             result = _object(
                 self._transport.get_json(
                     f"/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}/jobs?{query}"
@@ -87,9 +88,7 @@ class GitHubClient:
 
     def get_pull(self, repository: str, number: int) -> dict[str, object]:
         self._validate(repository, number)
-        return _object(
-            self._transport.get_json(f"/repos/{repository}/pulls/{number}")
-        )
+        return _object(self._transport.get_json(f"/repos/{repository}/pulls/{number}"))
 
     def list_branch_pulls(
         self, repository: str, head_repository: str, head_branch: str
