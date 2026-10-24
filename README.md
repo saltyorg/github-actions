@@ -188,6 +188,14 @@ locations for GitHub ingestion. All scanner severities remain in the raw reports
 findings enter the normalized report so existing issues can track severity
 reductions. New issues still require HIGH/CRITICAL severity or a KEV finding.
 
+APK, Debian and RPM findings retain their distribution identity. Application
+dependencies use `distro: application` in both scanner outputs, so the same Go,
+npm or other application dependency has one identity across base distributions.
+Missing distribution metadata still invalidates an OS-package finding. Decoded
+package names and namespaces are escaped when reconstructing PURLs, including
+scoped npm packages. Repeated Scout records retain distinct severity and fix
+evidence; combined SARIF rules use the highest observed severity.
+
 ```yaml
 - id: security
   uses: ./container-scan
@@ -282,6 +290,11 @@ Missing or failed assessments prevent issue resolution. Valid positive findings
 from incomplete coverage can still be reported, and the reporting job exits 2
 to show that coverage is incomplete.
 
+Every report requires a valid assessment timestamp. Partial assessments retain
+prior observations for unavailable target/scanner coverage and label those rows
+`last known`. Successful current coverage replaces the corresponding historical
+rows, including when another target or scanner remains unavailable.
+
 The tool manages one issue per vulnerability/package/distro identity within the
 scope, combining architectures and variants. It preserves scanner disagreement,
 creates no duplicate on unchanged findings, and edits existing issues only when
@@ -290,6 +303,13 @@ preserved. Manual closures opt out of automatic reopening. Recurrence can reopen
 an issue resolved by automation, with the last closure's actor checked through
 issue events. Resolution additionally requires published package evidence and
 two complete assessments from distinct runs at least six hours apart.
+
+Existing tracked application issues migrate to the distribution-independent
+identity without changing their issue number, human notes or manual-closure
+policy. Older issues without tracking state require an exact prior identity
+hash matched against complete current distribution inventories. Ambiguous
+legacy ownership stops reconciliation for manual review rather than creating
+another application issue.
 
 `dry-run` defaults to `true`, requires Issues read access, and performs no writes.
 Activation with `dry-run: 'false'` requires the caller's repository-scoped
@@ -306,6 +326,9 @@ reconciled by listing owned issues and is never blindly repeated. An idempotent
 PATCH can retry only after a read proves that the same owned issue still has its
 pre-write body and state. Concurrent edits stop reconciliation. Previously
 completed operations remain in the result if a later operation fails.
+
+Every PATCH attempt rechecks the issue's ownership, body, title and state before
+sending, including attempts delayed by rate limits.
 
 The aggregate JSON, `report-path` and `report-status` outputs, and job summary
 show proposed/applied operations and assessment errors. Assessment and issue
@@ -327,6 +350,12 @@ metadata when available. Scout's advisory snapshot is recorded as unavailable
 when the service does not expose one. A new download or a fresh SBOM cache is
 not evidence of a new advisory snapshot. Reports older than 24 hours, or dated
 more than five minutes in the future, cannot update issues.
+
+OS-less images have unsupported OS inventory and fix availability. Missing or
+unsupported inventory never establishes package removal. Inventory limitations
+and optional database-metadata failures preserve successfully parsed scanner
+findings and appear separately in `enrichment_errors`; they cannot turn valid
+positive findings into a clean assessment or supply automatic-resolution proof.
 
 Published Alpine scans check the matching branch's main/community security
 advisories, then refresh the image's configured package repositories in a

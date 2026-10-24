@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from typing import Protocol
 from urllib.parse import urlencode
 
+from .container_findings import (
+    APPLICATION_DISTRO,
+    OS_PACKAGE_TYPES,
+    finding,
+    package_purl,
+)
+from .container_tracking import STATUSES, evolve, read_state, state_comment
 from .github import GitHubClient
 from .transport import AmbiguousRequestError, GitHubTransport
-from .container_tracking import STATUSES, evolve, read_state, state_comment
 
 START = "<!-- salty-container-security:start -->"
 END = "<!-- salty-container-security:end -->"
@@ -133,9 +140,42 @@ class IssueClient:
         number = action.get("number")
         path = f"/repos/{self.repository}/issues" + (f"/{number}" if number else "")
         method = "PATCH" if number else "POST"
+        allowed_keys = {action["key"]}
+        before_marker = None
+        if number:
+            before_marker = issue_marker(
+                {"user": {"login": BOT}, "body": action["before_body"]}
+            )
+            if before_marker is None or before_marker["scope"] != action["scope"]:
+                raise ValueError("issue ownership changed before write")
+            allowed_keys.add(before_marker["key"])
+
+        def validate_current() -> None:
+            current = self.transport.get_json(path)
+            current_marker = (
+                issue_marker(current) if isinstance(current, dict) else None
+            )
+            if (
+                not isinstance(current, dict)
+                or type(current.get("number")) is not int
+                or current.get("number") != number
+                or current_marker != before_marker
+                or any(
+                    current.get(field) != action["before_" + field]
+                    for field in ("body", "state", "title")
+                )
+            ):
+                raise ValueError("issue changed before write; refusing to overwrite")
+
         for attempt in range(4):
             try:
-                result = self.transport.send_json(path, method, payload)
+                result = (
+                    self.transport.send_json(
+                        path, method, payload, before_attempt=validate_current
+                    )
+                    if number
+                    else self.transport.send_json(path, method, payload)
+                )
                 if (
                     not isinstance(result, dict)
                     or type(result.get("number")) is not int
@@ -157,7 +197,7 @@ class IssueClient:
                     row
                     for row in self.list_issues()
                     if (marker := issue_marker(row))
-                    and marker["key"] == action["key"]
+                    and marker["key"] in allowed_keys
                     and marker["scope"] == action["scope"]
                 ]
                 if number:
@@ -293,15 +333,17 @@ def managed_body(
                 [
                     *(
                         cell(item[key])
-                        for key in (
-                            "name",
-                            "platform",
-                            "version",
-                            "severity",
-                            "source",
-                            "fix",
+                        for key in ("name", "platform", "version", "severity")
+                    ),
+                    cell(
+                        item["source"]
+                        + (
+                            ", last known"
+                            if item.get("evidence_status") == "last known"
+                            else ""
                         )
                     ),
+                    cell(item["fix"]),
                     cell(
                         ", ".join(availability.get("versions", []))
                         if availability.get("source") == "Alpine secdb"
@@ -345,6 +387,21 @@ def managed_body(
     return body
 
 
+def application_finding(record: dict, *, distro: str = APPLICATION_DISTRO) -> dict:
+    """Rebuild a language identity, including verified legacy distribution aliases."""
+    return finding(
+        record["id"],
+        package_purl(record["package_type"], record["namespace"], record["package"]),
+        record["version"],
+        record["severity"],
+        distro,
+        record["source"],
+        url=record["url"],
+        fix=record["fix"],
+        kev=record["kev"],
+    )
+
+
 def plan_issues(
     scope: str,
     groups: dict,
@@ -354,15 +411,52 @@ def plan_issues(
     client: IssueStore,
     assessment: dict | None = None,
 ) -> list[dict]:
-    owned = {}
+    owned, previous_states = {}, {}
+    legacy_aliases: dict[str, set[str]] = {}
+    distros = {
+        target["inventory"]["distro"]
+        for target in (assessment or {}).get("targets", [])
+        if target.get("inventory", {}).get("status") == "complete"
+        and isinstance(target["inventory"].get("distro"), str)
+        and target["inventory"]["distro"]
+    }
+    for key, group in groups.items():
+        if (
+            group["package_type"] not in OS_PACKAGE_TYPES
+            and group["distro"] == APPLICATION_DISTRO
+        ):
+            for distro in distros:
+                legacy_key = application_finding(group, distro=distro)["key"]
+                legacy_aliases.setdefault(legacy_key, set()).add(key)
+    unmatched_legacy = set()
     for issue in issues:
         marker = issue_marker(issue)
         if marker and marker["scope"] == scope:
-            if marker["key"] in owned:
+            previous = read_state(issue["body"])
+            baseline = previous.get("group") if previous else None
+            key = marker["key"]
+            if baseline:
+                if baseline["key"] != key:
+                    raise ValueError("tracking state does not match issue identity")
+                if baseline["package_type"] not in OS_PACKAGE_TYPES:
+                    canonical_key = application_finding(baseline)["key"]
+                    if canonical_key in groups:
+                        key = canonical_key
+            elif key in legacy_aliases:
+                matches = legacy_aliases[key]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "ambiguous legacy issue identities require manual reconciliation"
+                    )
+                key = next(iter(matches))
+            elif key not in groups:
+                unmatched_legacy.add(issue["number"])
+            if key in owned:
                 raise ValueError(
                     "duplicate owned vulnerability issues require manual reconciliation"
                 )
-            owned[marker["key"]] = issue
+            owned[key] = issue
+            previous_states[key] = previous
     actions = []
     for key in sorted(set(groups) | set(owned)):
         group = groups.get(key)
@@ -384,7 +478,17 @@ def plan_issues(
             for item in (group or {})["observations"]
         ):
             continue
-        previous = read_state(existing["body"]) if existing else None
+        if (
+            existing is None
+            and group
+            and group["package_type"] not in OS_PACKAGE_TYPES
+            and unmatched_legacy
+        ):
+            raise ValueError(
+                "unmatched legacy issues require manual reconciliation before "
+                "creating application issues"
+            )
+        previous = deepcopy(previous_states.get(key))
         if (
             previous
             and existing
@@ -393,7 +497,23 @@ def plan_issues(
         ):
             raise ValueError("tracking resolution state disagrees with issue marker")
         if previous and previous.get("group") and previous["group"]["key"] != key:
-            raise ValueError("tracking state does not match issue identity")
+            baseline = previous["group"]
+            if (
+                group is None
+                or baseline["package_type"] in OS_PACKAGE_TYPES
+                or application_finding(baseline)["key"] != key
+            ):
+                raise ValueError("tracking state does not match issue identity")
+            previous["group"] = {
+                **baseline,
+                **application_finding(baseline),
+                "observations": [
+                    {**record, **application_finding(record)}
+                    for record in baseline["observations"]
+                ],
+            }
+            previous["pending"] = None
+            previous.pop("verification", None)
         if (
             existing
             and existing["state"] == "open"
@@ -405,7 +525,7 @@ def plan_issues(
             previous.update(status="review", pending=None, affected=[])
         tracking = evolve(previous, group, assessment, complete=complete)
         resolved = tracking["status"] == "resolved"
-        rendered = group or tracking.get("group")
+        rendered = tracking.get("group") or group
         title = (
             f"{rendered['id']}: {rendered['package']} ({rendered['distro']})"
             if rendered

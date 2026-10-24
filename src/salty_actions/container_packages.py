@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,18 +24,25 @@ def digest(value: object) -> str:
 
 def inventory(payload: dict) -> dict:
     """Require an explicit complete OS package list, including source identities."""
-    os_data = obj(obj(payload.get("Metadata"), "Trivy metadata").get("OS"), "OS")
+    metadata = obj(payload.get("Metadata", {}), "Trivy metadata")
+    if metadata.get("OS") is None:
+        return {"status": "unsupported"}
+    os_data = obj(metadata["OS"], "OS")
     family = text(os_data.get("Family"), "OS family")
     distro = distro_name(family, text(os_data.get("Name"), "OS release"))
     packages = []
     covered = False
-    for result in rows(payload.get("Results", []), "Trivy results"):
+    missing = False
+    for raw_result in rows(payload.get("Results", []), "Trivy results"):
+        result = obj(raw_result, "Trivy result")
         if result.get("Class") != "os-pkgs" or result.get("Type") != family:
             continue
         if not isinstance(result.get("Packages"), list):
+            missing = True
             continue
         covered = True
         for raw in result["Packages"]:
+            raw = obj(raw, "installed package")
             name, version = (
                 text(raw.get("Name"), "package name"),
                 text(raw.get("Version"), "package version"),
@@ -44,19 +51,25 @@ def inventory(payload: dict) -> dict:
                 {
                     "name": name,
                     "version": version,
-                    "source_name": raw.get("SrcName") or name,
-                    "source_version": raw.get("SrcVersion") or version,
+                    "source_name": text(
+                        raw.get("SrcName") or name, "source package name"
+                    ),
+                    "source_version": text(
+                        raw.get("SrcVersion") or version, "source package version"
+                    ),
                 }
             )
     packages.sort(key=lambda item: (item["name"], item["version"]))
     if len({item["name"] for item in packages}) != len(packages):
         raise ValueError("duplicate installed OS package identity")
     result = {
-        "status": "complete" if covered else "unknown",
+        "status": "complete" if covered and not missing else "unknown",
         "distro": distro,
         "packages": packages,
         "eosl": os_data.get("EOSL", False),
     }
+    if type(result["eosl"]) is not bool:
+        raise ValueError("invalid OS end-of-support status")
     return {**result, "sha256": digest(result)}
 
 
@@ -157,18 +170,20 @@ def assess(
     """Keep enrichment errors separate from scanner and KEV outcomes."""
     result: dict = {
         "status": "unknown",
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": datetime.now(UTC).isoformat(),
         "errors": [],
         "fixes": {},
         "remediated": [],
         "inputs": [],
     }
     distro = packages.get("distro", "")
+    if packages.get("status") == "unsupported" or (
+        distro and not distro.startswith("alpine/")
+    ):
+        result["status"] = "unsupported"
+        return result
     if packages.get("status") != "complete":
         result["errors"].append("Complete supported OS package inventory unavailable")
-        return result
-    if not distro.startswith("alpine/"):
-        result["status"] = "unsupported"
         return result
     if packages.get("eosl"):
         result["errors"].append("Complete supported OS package inventory unavailable")
@@ -362,11 +377,9 @@ def assess(
                 continue
             statuses = {value[5] for value in evidence}
             status = next(
-                (
-                    value
-                    for value in ("not_available", "blocked", "installable", "fixed")
-                    if value in statuses
-                )
+                value
+                for value in ("not_available", "blocked", "installable", "fixed")
+                if value in statuses
             )
             result["fixes"][key] = {
                 "status": status,

@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
+
+APPLICATION_DISTRO = "application"
+OS_PACKAGE_TYPES = frozenset({"apk", "deb", "rpm"})
 
 
 def text(value: object, field: str) -> str:
@@ -21,17 +24,21 @@ def text(value: object, field: str) -> str:
 
 def obj(value: object, field: str) -> dict:
     if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
+        # Invalid scanner JSON uses the same ValueError contract as schema errors.
+        raise ValueError(f"{field} must be an object")  # noqa: TRY004
     return value
 
 
 def rows(value: object, field: str) -> list:
     if not isinstance(value, list):
-        raise ValueError(f"{field} must be an array")
+        # Invalid scanner JSON uses the same ValueError contract as schema errors.
+        raise ValueError(f"{field} must be an array")  # noqa: TRY004
     return value
 
 
 def distro_name(family: str, version: str) -> str:
+    text(family, "OS family")
+    text(version, "OS release")
     # Alpine patch releases share one package repository branch.
     if family == "alpine":
         match = re.fullmatch(r"(\d+\.\d+)(?:\.\d+)?", version)
@@ -45,16 +52,32 @@ def package_identity(purl: object) -> tuple[str, str, str, dict]:
     purl = text(purl, "package PURL")
     if not purl.startswith("pkg:"):
         raise ValueError("package identity must be a PURL")
-    path, _, query = purl[4:].partition("?")
-    path = path.split("#", 1)[0].rsplit("@", 1)[0]
+    path, _, query = purl[4:].split("#", 1)[0].partition("?")
+    path = path.rsplit("@", 1)[0]
     parts = path.split("/")
     if len(parts) < 2:
         raise ValueError("package PURL has no type/name")
+    package_type = text(parts[0], "package type")
+    if not re.fullmatch(r"[a-z][a-z0-9.+-]*", package_type):
+        raise ValueError("invalid package PURL type")
+    namespace = unquote("/".join(parts[1:-1]))
+    if namespace:
+        text(namespace, "package namespace")
     return (
-        text(parts[0], "package type"),
-        unquote("/".join(parts[1:-1])),
+        package_type,
+        namespace,
         text(unquote(parts[-1]), "package name"),
         parse_qs(query),
+    )
+
+
+def package_purl(package_type: str, namespace: str, package: str) -> str:
+    """Serialize decoded identity fields without introducing PURL delimiters."""
+    prefix = "/".join(quote(part, safe="") for part in namespace.split("/"))
+    return (
+        f"pkg:{package_type}/"
+        + (prefix + "/" if prefix else "")
+        + quote(package, safe="")
     )
 
 
@@ -115,12 +138,7 @@ def trivy_findings(payload: object, *, all_severities: bool = False) -> list[dic
     report = obj(payload, "Trivy report")
     if report.get("SchemaVersion") != 2:
         raise ValueError("unsupported Trivy report schema")
-    metadata = obj(report.get("Metadata"), "Trivy metadata")
-    os_data = obj(metadata.get("OS"), "Trivy operating system")
-    distro = distro_name(
-        text(os_data.get("Family"), "OS family"),
-        text(os_data.get("Name"), "OS release"),
-    )
+    metadata = obj(report.get("Metadata", {}), "Trivy metadata")
     results = rows(report.get("Results", []), "Trivy results")
     findings = []
     for result in results:
@@ -132,6 +150,14 @@ def trivy_findings(payload: object, *, all_severities: bool = False) -> list[dic
             identity = obj(
                 vulnerability.get("PkgIdentifier"), "Trivy package identifier"
             )
+            package_type, _, _, _ = package_identity(identity.get("PURL"))
+            distro = APPLICATION_DISTRO
+            if result.get("Class") == "os-pkgs" or package_type in OS_PACKAGE_TYPES:
+                os_data = obj(metadata.get("OS"), "Trivy operating system")
+                distro = distro_name(
+                    text(os_data.get("Family"), "OS family"),
+                    text(os_data.get("Name"), "OS release"),
+                )
             item = finding(
                 vulnerability.get("VulnerabilityID"),
                 identity.get("PURL"),
@@ -158,6 +184,9 @@ def scout_findings(
     if len(runs) != 1:
         raise ValueError("Scout report must contain one scan run")
     run = obj(runs[0], "Scout run")
+    for invocation in rows(run.get("invocations", []), "Scout invocations"):
+        if obj(invocation, "Scout invocation").get("executionSuccessful") is False:
+            raise ValueError("Scout invocation did not complete successfully")
     driver = obj(obj(run.get("tool"), "Scout tool").get("driver"), "Scout driver")
     if driver.get("name") != "docker scout":
         raise ValueError("SARIF report is not from Docker Scout")
@@ -203,10 +232,7 @@ def scout_findings(
                 severity = "UNKNOWN"
             for purl in purls:
                 purl = text(purl, "Scout package PURL")
-                if (rule_id, purl) in used:
-                    continue
-                used.add((rule_id, purl))
-                _, _, _, qualifiers = package_identity(purl)
+                package_type, _, _, qualifiers = package_identity(purl)
                 version_path = purl.split("?", 1)[0].split("#", 1)[0]
                 if "@" not in version_path:
                     raise ValueError("Scout PURL has no installed package version")
@@ -225,7 +251,7 @@ def scout_findings(
                         query.get("osn", [""])[0],
                         query.get("osv", [""])[0],
                     )
-                if not os_name or not os_version:
+                if package_type in OS_PACKAGE_TYPES and (not os_name or not os_version):
                     raise ValueError("Scout finding has no distro identity")
                 fix = properties.get("fixed_version", "")
                 if fix == "not fixed":
@@ -235,12 +261,18 @@ def scout_findings(
                     purl,
                     version,
                     severity,
-                    distro_name(os_name, os_version),
+                    distro_name(os_name, os_version)
+                    if package_type in OS_PACKAGE_TYPES
+                    else APPLICATION_DISTRO,
                     "scout",
                     url=rule.get("helpUri", ""),
                     fix=fix,
                     kev=kev,
                 )
+                signature = json.dumps(item, sort_keys=True)
+                if signature in used:
+                    continue
+                used.add(signature)
                 if kev or all_severities or item["severity"] in {"CRITICAL", "HIGH"}:
                     findings.append(item)
     return findings

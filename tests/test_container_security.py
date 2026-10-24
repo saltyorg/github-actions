@@ -12,11 +12,11 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
-from collections.abc import Callable
-from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -34,12 +34,16 @@ from salty_actions.container_report import (
     aggregate,
     ensure_trusted_write,
     reconcile,
+)
+from salty_actions.container_report import (
     main as report_main,
 )
-from salty_actions.container_scan import main as scan_main, scan, sarif_report
-from salty_actions.container_tools import CommandRunner, OperationError, install_tool
+from salty_actions.container_scan import main as scan_main
+from salty_actions.container_scan import sarif_report, scan
 from salty_actions.container_snapshot import freeze_targets
+from salty_actions.container_tools import CommandRunner, OperationError, install_tool
 from salty_actions.transport import AmbiguousRequestError, GitHubTransport
+
 from .http_fakes import FakeResponse, RecordingOpener
 from .test_transport import http_error
 
@@ -107,7 +111,7 @@ def scan_report(*, clean=False, complete=True, kind="published"):
         "image_id": IMAGE_ID,
         "run_id": "123",
         "run_attempt": "1",
-        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "scanned_at": datetime.now(UTC).isoformat(),
         "scanners": {"trivy": "complete", "scout": "complete", "kev": "complete"}
         if complete
         else {"trivy": "error", "scout": "complete", "kev": "complete"},
@@ -180,9 +184,8 @@ class ParserTests(unittest.TestCase):
             (scout_findings, {**scout_report(), "runs": []}),
         ]
         for parser, payload in cases:
-            with self.subTest(parser=parser):
-                with self.assertRaises(ValueError):
-                    parser(payload)
+            with self.subTest(parser=parser), self.assertRaises(ValueError):
+                parser(payload)
         payload = trivy_report()
         del payload["Results"][0]["Vulnerabilities"][0]["PkgIdentifier"]
         with self.assertRaises(ValueError):
@@ -282,7 +285,8 @@ class RetryTests(unittest.TestCase):
         execute = unittest.mock.Mock(
             return_value=subprocess.CompletedProcess([], 1, "", "bad secret-password")
         )
-        with patch.dict(os.environ, {"DOCKER_SCOUT_HUB_PASSWORD": "secret-password"}):
+        # Deliberately fake credentials exercise redaction without external requests.
+        with patch.dict(os.environ, {"DOCKER_SCOUT_HUB_PASSWORD": "secret-password"}):  # nosec B105
             with self.assertRaises(OperationError) as caught:
                 CommandRunner(execute=execute)(["scanner"])
             self.assertNotIn("secret-password", str(caught.exception))
@@ -448,13 +452,15 @@ class ScanTests(unittest.TestCase):
             self.assertIn("does not match", report["errors"][0])
 
     def test_published_mutable_reference_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "digest-pinned"):
-                scan(
-                    {**TARGET, "image": "example/base:latest"},
-                    "published",
-                    Path(directory),
-                )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaisesRegex(ValueError, "digest-pinned"),
+        ):
+            scan(
+                {**TARGET, "image": "example/base:latest"},
+                "published",
+                Path(directory),
+            )
 
     def test_scout_disabled_candidate_cannot_claim_complete_kev_coverage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -513,8 +519,9 @@ class ReportingTests(unittest.TestCase):
             root = Path(directory)
             (root / "reports").mkdir()
             (root / "expected.json").write_text(json.dumps(EXPECTED))
+            # A fake token exercises redaction without authenticated requests.
             env = {
-                "GITHUB_TOKEN": "private-test-token",
+                "GITHUB_TOKEN": "private-test-token",  # nosec B105
                 "GITHUB_REPOSITORY": REPOSITORY,
                 "GITHUB_RUN_ID": "123",
                 "GITHUB_RUN_ATTEMPT": "1",
@@ -861,11 +868,11 @@ class ReportingTests(unittest.TestCase):
             self.assertTrue(json.loads(output.read_text())["errors"])
 
     def test_report_main_unwritable_output_returns_operational_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with patch.dict(
-                os.environ, {"SECURITY_REPORT_OUTPUT": directory}, clear=True
-            ):
-                self.assertEqual(report_main(), 2)
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"SECURITY_REPORT_OUTPUT": directory}, clear=True),
+        ):
+            self.assertEqual(report_main(), 2)
 
     def test_action_commands_work_outside_the_tool_checkout(self):
         for action, expected in [
@@ -894,6 +901,7 @@ class ReportingTests(unittest.TestCase):
                     env=env,
                     capture_output=True,
                     text=True,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 2)
                 self.assertIn(expected, result.stderr)
@@ -1075,7 +1083,13 @@ class IssueTransportTests(unittest.TestCase):
         }
         updated = {**old, **action["payload"]}
         opener = RecordingOpener(
-            [http_error(503), FakeResponse(200, [old]), FakeResponse(200, updated)]
+            [
+                FakeResponse(200, old),
+                http_error(503),
+                FakeResponse(200, [old]),
+                FakeResponse(200, old),
+                FakeResponse(200, updated),
+            ]
         )
         sleeps: list[float] = []
         client = IssueClient(
@@ -1085,7 +1099,8 @@ class IssueTransportTests(unittest.TestCase):
         )
         self.assertEqual(client.write(action)["title"], updated["title"])
         self.assertEqual(
-            [request.method for request in opener.requests], ["PATCH", "GET", "PATCH"]
+            [request.method for request in opener.requests],
+            ["GET", "PATCH", "GET", "GET", "PATCH"],
         )
         self.assertEqual(sleeps, [1])
 
@@ -1098,14 +1113,17 @@ class IssueTransportTests(unittest.TestCase):
             "title": "human title",
             "user": {"login": BOT},
         }
-        opener = RecordingOpener([http_error(503), FakeResponse(200, [changed])])
+        old = {**changed, "title": action["before_title"]}
+        opener = RecordingOpener(
+            [FakeResponse(200, old), http_error(503), FakeResponse(200, [changed])]
+        )
         client = IssueClient(
             "token", REPOSITORY, transport=GitHubTransport("token", opener=opener)
         )
         with self.assertRaisesRegex(AmbiguousRequestError, "changed during"):
             client.write(action)
         self.assertEqual(
-            [request.method for request in opener.requests], ["PATCH", "GET"]
+            [request.method for request in opener.requests], ["GET", "PATCH", "GET"]
         )
 
     def test_last_closure_actor_controls_reopening(self):

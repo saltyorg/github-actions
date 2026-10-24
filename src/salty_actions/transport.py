@@ -4,10 +4,10 @@ import json
 import math
 import ssl
 import time
-from http.client import IncompleteRead
 from collections.abc import Callable
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
+from http.client import IncompleteRead
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -58,8 +58,13 @@ class GitHubTransport:
                     f"GitHub read request returned HTTP {error.code}"
                 ) from error
             except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
-                if isinstance(error, URLError) and isinstance(error.reason, ssl.SSLCertVerificationError):
-                    raise RuntimeError("GitHub TLS certificate verification failed") from error
+                if isinstance(error, URLError) and isinstance(
+                    error.reason, ssl.SSLCertVerificationError
+                ):
+                    # URLError.reason is an exception, but this is a transport failure.
+                    raise RuntimeError(  # noqa: TRY004
+                        "GitHub TLS certificate verification failed"
+                    ) from error
                 if request_number < READ_ATTEMPTS - 1:
                     self._sleep(2**request_number)
                     continue
@@ -68,7 +73,14 @@ class GitHubTransport:
                 ) from error
         raise AssertionError("unreachable")
 
-    def send_json(self, path: str, method: str, payload: object) -> object:
+    def send_json(
+        self,
+        path: str,
+        method: str,
+        payload: object,
+        *,
+        before_attempt: Callable[[], None] | None = None,
+    ) -> object:
         """Send an issue write; uncertain acceptance requires caller reconciliation.
 
         Only explicit rate-limit rejections are replayed here. In particular,
@@ -77,11 +89,14 @@ class GitHubTransport:
         if method not in {"POST", "PATCH"}:
             raise ValueError("JSON mutations require POST or PATCH")
         request = self._request(
-            path, method=method,
+            path,
+            method=method,
             data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
         )
         request.add_header("Content-Type", "application/json")
         for attempt in range(READ_ATTEMPTS):
+            if before_attempt is not None:
+                before_attempt()
             try:
                 with self._opener(request, timeout=30) as response:
                     if response.status not in {200, 201}:
@@ -149,9 +164,7 @@ class GitHubTransport:
             },
         )
 
-    def _http_retry_delay(
-        self, error: HTTPError, request_number: int
-    ) -> float | None:
+    def _http_retry_delay(self, error: HTTPError, request_number: int) -> float | None:
         retry_after = _retry_after_seconds(error, self._now())
         if error.code == 408 or 500 <= error.code < 600:
             return retry_after if retry_after is not None else 2**request_number
@@ -175,7 +188,7 @@ def _retry_after_seconds(error: HTTPError, now: float) -> float | None:
         except (TypeError, ValueError, OverflowError):
             return None
         if retry_at.tzinfo is None:
-            retry_at = retry_at.replace(tzinfo=timezone.utc)
+            retry_at = retry_at.replace(tzinfo=UTC)
         return max(0, math.ceil(retry_at.timestamp() - now))
     return seconds if seconds >= 0 else None
 

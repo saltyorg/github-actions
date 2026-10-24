@@ -5,10 +5,10 @@ from __future__ import annotations
 import copy
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from .container_findings import OS_PACKAGE_TYPES, finding, package_purl
 from .container_packages import digest
-from .container_findings import finding
 
 STATE = re.compile(r"<!-- salty-container-tracking:([^\n]+) -->")
 STATUSES = {
@@ -21,10 +21,10 @@ STATUSES = {
 
 
 def instant(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("assessment timestamps require a timezone")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def read_state(body: str) -> dict | None:
@@ -77,12 +77,8 @@ def read_state(body: str) -> dict | None:
     if group is not None:
         try:
             for record in [group, *group["observations"]]:
-                purl = (
-                    "pkg:"
-                    + record["package_type"]
-                    + "/"
-                    + (record["namespace"] + "/" if record["namespace"] else "")
-                    + record["package"]
+                purl = package_purl(
+                    record["package_type"], record["namespace"], record["package"]
                 )
                 normalized = finding(
                     record["id"],
@@ -97,6 +93,8 @@ def read_state(body: str) -> dict | None:
                 )
                 if normalized["key"] != group["key"] or record["key"] != group["key"]:
                     raise ValueError("stored finding identity mismatch")
+                if record.get("evidence_status") not in {None, "last known"}:
+                    raise ValueError("invalid stored evidence status")
                 availability = record.get("availability", {})
                 if not isinstance(availability, dict) or any(
                     not isinstance(availability.get(key, []), list)
@@ -148,7 +146,8 @@ def read_state(body: str) -> dict | None:
         raise ValueError("resolved tracking state lacks confirmation evidence")
     verification = value.get("verification", [])
     if not isinstance(verification, list):
-        raise ValueError("invalid published remediation evidence")
+        # Stored JSON validation shares the scanner/report ValueError contract.
+        raise ValueError("invalid published remediation evidence")  # noqa: TRY004
     for target in verification:
         if (
             not isinstance(target, dict)
@@ -171,21 +170,18 @@ def read_state(body: str) -> dict | None:
 
 def state_comment(state: dict) -> str:
     encoded = json.dumps(state, sort_keys=True, separators=(",", ":"))
+    # Prevent scanner/package strings from terminating the hidden HTML comment.
+    encoded = encoded.replace("--", "\\u002d\\u002d")
     if len(encoded) > 40000:
         raise ValueError("container tracking state exceeds supported size")
-    # Prevent scanner/package strings from terminating the hidden HTML comment.
-    return (
-        "<!-- salty-container-tracking:"
-        + encoded.replace("--", "\\u002d\\u002d")
-        + " -->"
-    )
+    return "<!-- salty-container-tracking:" + encoded + " -->"
 
 
 def matching_packages(group: dict, inventory: dict) -> list[dict]:
     if (
         inventory.get("status") != "complete"
         or inventory.get("distro") != group["distro"]
-        or group["package_type"] not in {"apk", "deb"}
+        or group["package_type"] not in OS_PACKAGE_TYPES
     ):
         return []
     return [
@@ -246,6 +242,59 @@ def remediation(previous: dict, assessment: dict) -> list[dict] | None:
     return proof
 
 
+def retain_unassessed(
+    previous: dict | None, group: dict | None, assessment: dict
+) -> dict | None:
+    """Keep last known observations only where current scanner coverage is absent."""
+    if group is not None:
+        merged = copy.deepcopy(group)
+    elif previous is not None:
+        merged = copy.deepcopy(previous)
+    else:
+        return None
+    targets = {(t["name"], t["platform"]): t for t in assessment["targets"]}
+
+    def current_fields(row):
+        return {key: value for key, value in row.items() if key != "evidence_status"}
+
+    def identity(row):
+        return json.dumps(current_fields(row), sort_keys=True, separators=(",", ":"))
+
+    observations = {
+        identity(row): current_fields(row)
+        for row in (group or {}).get("observations", [])
+    }
+    retained = False
+    for row in (previous or {}).get("observations", []):
+        target = targets.get((row["name"], row["platform"]), {})
+        scanners = target.get("scanners")
+        scanner = "kev" if row["kev"] else row["source"]
+        if isinstance(scanners, dict) and scanners.get(scanner) == "complete":
+            continue
+        key = identity(row)
+        if key not in observations:
+            observations[key] = {**row, "evidence_status": "last known"}
+            retained = True
+    merged["observations"] = sorted(
+        observations.values(),
+        key=lambda row: (
+            *(
+                str(row[key])
+                for key in ("name", "platform", "source", "version", "kev")
+            ),
+            identity(row),
+        ),
+    )
+    images = set((group or {}).get("images", []))
+    if retained:
+        # Older normalized observations have no per-row image digest mapping.
+        images.update((previous or {}).get("images", []))
+    merged["images"] = sorted(images)
+    merged["kev"] = any(row["kev"] for row in merged["observations"])
+    merged.pop("run_url", None)
+    return merged
+
+
 def evolve(
     previous: dict | None,
     group: dict | None,
@@ -274,9 +323,11 @@ def evolve(
     )
     if group is not None:
         # Routine scan run URLs/timestamps are not substantive issue changes.
-        state["group"] = {
-            key: value for key, value in group.items() if key != "run_url"
-        }
+        state["group"] = (
+            {key: value for key, value in group.items() if key != "run_url"}
+            if complete
+            else retain_unassessed(state["group"], group, assessment)
+        )
         known = {(t["name"], t["platform"]): t for t in state["affected"]}
         for observation in group["observations"]:
             identity = observation["name"], observation["platform"]
@@ -305,6 +356,7 @@ def evolve(
         state["pending"] = None
         state.pop("verification", None)
     elif not complete:
+        state["group"] = retain_unassessed(state["group"], None, assessment)
         state["status"], state["pending"] = "incomplete", None
         state.pop("verification", None)
     elif state["status"] != "resolved":
@@ -313,9 +365,7 @@ def evolve(
             assessment["run_id"] and assessment["at"] and scope == state["scope"]
         )
         if eligible:
-            age = (
-                datetime.now(timezone.utc) - instant(assessment["at"])
-            ).total_seconds()
+            age = (datetime.now(UTC) - instant(assessment["at"])).total_seconds()
             eligible = 0 <= age <= 86400
         proof = remediation(state, assessment) if eligible else None
         if proof:

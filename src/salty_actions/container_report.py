@@ -7,21 +7,23 @@ import os
 import re
 import sys
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from .container_findings import finding, obj, rows, text
+from .container_findings import finding, obj, package_purl, rows, text
 from .container_issues import IssueClient, IssueStore, plan_issues
+from .container_packages import digest
 from .container_scan import DIGEST, boolean, validate_target
 from .container_tools import CommandRunner, safe_error
-from .container_packages import digest
 from .container_tracking import instant
 
 
 def validate_inventory(value: object) -> dict:
     data = obj(value, "package inventory")
+    if data.get("status") in {"unknown", "unsupported"}:
+        return {"status": data["status"]}
     if data.get("status") != "complete":
-        return {"status": "unknown"}
+        raise ValueError("invalid inventory status")
     if not isinstance(data.get("distro"), str) or type(data.get("eosl")) is not bool:
         raise ValueError("invalid inventory distribution")
     packages = rows(data.get("packages"), "inventory packages")
@@ -29,8 +31,8 @@ def validate_inventory(value: object) -> dict:
         package = obj(package, "installed package")
         if set(package) != {"name", "version", "source_name", "source_version"}:
             raise ValueError("invalid inventory package fields")
-        for key, value in package.items():
-            text(value, key)
+        for key, field_value in package.items():
+            text(field_value, key)
     if len({p["name"] for p in packages}) != len(packages):
         raise ValueError("duplicate inventory package")
     if data.get("sha256") != digest({k: v for k, v in data.items() if k != "sha256"}):
@@ -136,6 +138,8 @@ def aggregate(
             raise ValueError("invalid availability status")
         for error in rows(availability.get("errors", []), "availability errors"):
             availability_errors.append(text(error, "availability error"))
+        for error in rows(report.get("enrichment_errors", []), "enrichment errors"):
+            availability_errors.append(text(error, "enrichment error"))
         fixes = obj(availability.get("fixes", {}), "fix assessments")
         for key, fix in fixes.items():
             if (
@@ -165,13 +169,13 @@ def aggregate(
             "inventory": packages,
             "availability": availability,
             "provenance": obj(report.get("provenance", {}), "scan provenance"),
+            "scanners": statuses,
         }
-        if isinstance(report.get("scanned_at"), str):
-            scanned_at = instant(report["scanned_at"])
-            age = (datetime.now(timezone.utc) - scanned_at).total_seconds()
-            if age < -300 or age > 86400:
-                raise ValueError("scan evidence is stale or dated in the future")
-            times.append(scanned_at)
+        scanned_at = instant(text(report.get("scanned_at"), "scan timestamp"))
+        age = (datetime.now(UTC) - scanned_at).total_seconds()
+        if age < -300 or age > 86400:
+            raise ValueError("scan evidence is stale or dated in the future")
+        times.append(scanned_at)
         runs.add(report.get("run_id", ""))
         for item in rows(report.get("findings"), "findings"):
             item = obj(item, "finding")
@@ -187,10 +191,10 @@ def aggregate(
                 if item["namespace"]
                 else ""
             )
-            purl = (
-                f"pkg:{text(item['package_type'], 'package type')}/"
-                + (namespace + "/" if namespace else "")
-                + text(item["package"], "package name")
+            purl = package_purl(
+                text(item["package_type"], "package type"),
+                namespace,
+                text(item["package"], "package name"),
             )
             checked = finding(
                 item["id"],
@@ -437,12 +441,14 @@ def main() -> int:
                     + ("complete" if result["complete"] else "incomplete")
                     + ".\n"
                 )
-                for action in result["actions"]:
-                    stream.write(
-                        f"\n- {action['operation']}: {action['payload'].get('title', action['key'])}\n"
-                    )
-                for issue in result["applied"]:
-                    stream.write(f"\n- {issue['operation']}: {issue['url']}\n")
+                stream.writelines(
+                    f"\n- {action['operation']}: {action['payload'].get('title', action['key'])}\n"
+                    for action in result["actions"]
+                )
+                stream.writelines(
+                    f"\n- {issue['operation']}: {issue['url']}\n"
+                    for issue in result["applied"]
+                )
                 for message in result["errors"]:
                     stream.write(f"\nAssessment error: {safe_error(message)}\n")
                 for message in result.get("availability_errors", []):

@@ -46,22 +46,24 @@ def validate_target(target: object, *, published: bool) -> dict:
 
 
 def sarif_report(findings: list[dict]) -> dict:
-    rules = {}
+    rules: dict[str, dict] = {}
     results = []
     for item in findings:
         rule_id = f"{item['source']}/{item['key']}"
+        score = {
+            "CRITICAL": "9.0",
+            "HIGH": "8.0",
+            "MEDIUM": "5.0",
+            "LOW": "2.0",
+        }.get(item["severity"], "0.0")
+        previous = (
+            rules.get(rule_id, {}).get("properties", {}).get("security-severity", "0.0")
+        )
         rules[rule_id] = {
             "id": rule_id,
             "name": item["id"],
             "shortDescription": {"text": f"{item['id']} in {item['package']}"},
-            "properties": {
-                "security-severity": {
-                    "CRITICAL": "9.0",
-                    "HIGH": "8.0",
-                    "MEDIUM": "5.0",
-                    "LOW": "2.0",
-                }.get(item["severity"], "0.0")
-            },
+            "properties": {"security-severity": max(previous, score, key=float)},
         }
         if item["url"]:
             rules[rule_id]["helpUri"] = item["url"]
@@ -128,6 +130,7 @@ def scan(
         "scanners": {},
         "findings": [],
         "errors": [],
+        "enrichment_errors": [],
         "kev_status": "unknown",
         "report_status": "incomplete",
     }
@@ -286,22 +289,32 @@ def scan(
                             )
                         )
                         if engine == "trivy":
-                            report["inventory"] = inventory(payload)
+                            try:
+                                report["inventory"] = inventory(payload)
+                            except ValueError as error:
+                                report["enrichment_errors"].append(
+                                    f"Trivy inventory: {safe_error(str(error))}"
+                                )
                             metadata_path = work / "trivy-cache/db/metadata.json"
                             if metadata_path.is_file():
-                                metadata = obj(
-                                    json.loads(metadata_path.read_text()),
-                                    "Trivy DB metadata",
-                                )
-                                report["provenance"]["trivy_database"] = {
-                                    key: metadata.get(key)
-                                    for key in (
-                                        "Version",
-                                        "UpdatedAt",
-                                        "NextUpdate",
-                                        "DownloadedAt",
+                                try:
+                                    metadata = obj(
+                                        json.loads(metadata_path.read_text()),
+                                        "Trivy DB metadata",
                                     )
-                                }
+                                    report["provenance"]["trivy_database"] = {
+                                        key: metadata.get(key)
+                                        for key in (
+                                            "Version",
+                                            "UpdatedAt",
+                                            "NextUpdate",
+                                            "DownloadedAt",
+                                        )
+                                    }
+                                except (OSError, ValueError) as error:
+                                    report["enrichment_errors"].append(
+                                        f"Trivy DB metadata: {safe_error(str(error))}"
+                                    )
                         if mode == "scout":
                             compatible = output / "scout-code-scanning.sarif"
                             compatible.write_text(
@@ -381,6 +394,10 @@ def main() -> int:
                 )
                 stream.writelines(
                     f"\nAssessment error: {error}\n" for error in report["errors"]
+                )
+                stream.writelines(
+                    f"\nEnrichment error: {error}\n"
+                    for error in report.get("enrichment_errors", [])
                 )
                 availability = report.get("availability", {})
                 stream.write(
