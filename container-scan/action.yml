@@ -52,7 +52,7 @@ runs:
   steps:
     - name: Enable published-image package probes on foreign platforms
       if: ${{ inputs.kind == 'published' && inputs.check-fix-availability == 'true' }}
-      uses: docker/setup-qemu-action@v4.3.0
+      uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
     - name: Scan immutable container bytes
       id: scan
       shell: bash
