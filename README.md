@@ -173,6 +173,61 @@ findings, annotations, summary, and source preservation, set
 `SALTBOX_LINT_TEST_BINARY` to a local executable that reports
 `saltbox-lint version 1.2.3`, then run `python3 -m unittest discover -v`.
 
+### `jactionlint`
+
+Checks GitHub Actions workflows with a checksum-verified
+[`jdx/jactionlint`](https://github.com/jdx/jactionlint) release. It replaces
+the per-repository `rhysd/actionlint` pins: the linter release and the
+organization rule defaults are maintained here, so consumers only reference
+this action. This action is absent from shared-actions `v1.4.4` and earlier.
+
+The following example runs the action locally from a checkout of this repository:
+
+```yaml
+- uses: ./jactionlint
+  with:
+    working-directory: .
+    files: |
+      .github/workflows/ci.yml
+      .github/workflows/release.yml
+```
+
+`working-directory` defaults to `.` relative to `GITHUB_WORKSPACE`. `files`
+contains one literal workflow file path per line, resolved from that working
+directory; empty lines are ignored. Without `files` the linter checks the whole
+repository: its workflows, composite actions, Dependabot configuration and
+Actions lock file. File text is never interpreted as a shell command or a
+linter option, and the Action never applies fixes.
+
+The linter release is pinned in `jactionlint/action.yml` and updated by
+Renovate in this repository; consumers receive a new linter with a new
+shared-actions release and cannot select another one.
+
+The organization defaults in
+`jactionlint/config/jactionlint/jactionlint.yaml` apply to every repository
+that has no jactionlint configuration of its own. They select the `default`
+profile, which adds the security and policy rules to the workflow correctness
+checks, and accept `saltyorg/*` actions by release tag. Actions of other
+owners must be pinned to a full commit SHA. A repository that adds
+`.github/jactionlint.yaml` replaces these defaults entirely, so it must repeat
+the settings it still wants. Prefer a `# jactionlint ignore=<rule>` comment
+with a reason for a single accepted finding.
+
+The Action requires a Linux X64 or ARM64 runner with Bash, `curl`, `awk`,
+`sha256sum`, `tar`, and standard core utilities. It downloads only from
+`jdx/jactionlint` GitHub releases, verifies the archive checksum and binary
+version, then runs `jactionlint --format github` without network access. The
+linter also runs `shellcheck` and `pyflakes` on `run:` scripts when the runner
+has them. It has no caller-facing outputs; findings appear as GitHub
+annotations. Exit code `0` means no findings, `1` means findings, `2` means an
+invalid linter option, and `3` means an operational or configuration error.
+
+The shared-repository tests use a local HTTP release fixture and an
+argv-recording executable to test the installer and wrapper. CI additionally
+runs the real linter on this repository's workflows and on two contract
+fixtures: `tests/actionlint/organization-policy.yml` must pass and
+`tests/actionlint/unpinned-action.yml` must be rejected.
+
 ### Container security actions
 
 The container security actions are not included in published `v1.2.0`. The examples below run

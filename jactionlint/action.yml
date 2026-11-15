@@ -1,0 +1,31 @@
+name: jactionlint
+description: Check GitHub Actions workflows with a pinned, checksum-verified jactionlint release.
+author: saltyorg
+inputs:
+  working-directory:
+    description: Directory relative to GITHUB_WORKSPACE in which files are resolved.
+    required: false
+    default: '.'
+  files:
+    description: Newline-separated literal workflow file paths (one per line); empty checks the whole repository.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install jactionlint
+      id: install
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=jdx/jactionlint
+        JACTIONLINT_VERSION: v2.6.0
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/install.sh"
+    - name: Check workflows
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_FILES: ${{ inputs.files }}
+        JACTIONLINT_BINARY: ${{ steps.install.outputs.binary }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/run.sh"

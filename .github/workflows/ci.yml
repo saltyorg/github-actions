@@ -10,14 +10,23 @@ on:
 permissions:
   contents: read
 
+# Superseded pull request runs are cancelled; every pushed commit and release
+# keeps its own complete result.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   container-platforms:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker with the containerd image store
-        uses: docker/setup-docker-action@v5.6.0
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5 # v5.6.0
         with:
           set-host: true
           daemon-config: |
@@ -30,10 +39,12 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run unit tests
         run: python3 -m unittest discover -v
@@ -45,16 +56,29 @@ jobs:
         run: |
           bash -n saltbox-lint/install.sh
           bash -n saltbox-lint/run.sh
+          bash -n jactionlint/install.sh
+          bash -n jactionlint/run.sh
 
       - name: Validate actions and workflows
-        run: |
-          docker run --rm \
-            --volume "$PWD:/repo:ro" \
-            --workdir /repo \
-            rhysd/actionlint:1.7.12 \
-            .github/workflows/ci.yml \
-            .github/workflows/release.yml \
+        uses: ./jactionlint
+        with:
+          files: |
+            .github/workflows/ci.yml
+            .github/workflows/release.yml
             tests/actionlint/actions.yml
+            tests/actionlint/organization-policy.yml
+
+      # The packaged organization config must stay strict for other owners.
+      - name: Check an unpinned third-party action
+        id: unpinned
+        continue-on-error: true
+        uses: ./jactionlint
+        with:
+          files: tests/actionlint/unpinned-action.yml
+
+      - name: Require the unpinned action to be rejected
+        if: steps.unpinned.outcome != 'failure'
+        run: exit 1
 
       - name: Check whitespace errors
         env:

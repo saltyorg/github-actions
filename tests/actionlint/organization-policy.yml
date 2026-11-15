@@ -1,0 +1,18 @@
+name: Organization policy contract
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tagged-saltyorg-action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # A release tag is accepted here only because the organization config
+      # packaged with the jactionlint action allows it for Saltyorg actions.
+      - uses: saltyorg/github-actions/saltbox-lint@v1.4.4
+        with:
+          version: v1.2.3

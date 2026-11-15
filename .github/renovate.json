@@ -13,7 +13,7 @@
     "customManagers": [
         {
             "customType": "regex",
-            "managerFilePatterns": ["/^container-scan/action\\.yml$/"],
+            "managerFilePatterns": ["/^container-scan/action\\.yml$/", "/^jactionlint/action\\.yml$/"],
             "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[A-Z_]+: (?<currentValue>v\\d+\\.\\d+\\.\\d+)" ]
         }
     ],

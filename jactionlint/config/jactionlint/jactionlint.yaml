@@ -1,0 +1,7 @@
+# Saltyorg defaults for repositories without a jactionlint config of their own.
+profile: default
+rules:
+  unpinned-uses:
+    policies:
+      # Saltyorg actions are consumed by immutable release tag, not by commit.
+      saltyorg/*: ref-pin

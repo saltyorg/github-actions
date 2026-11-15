@@ -1,0 +1,18 @@
+name: Unpinned action contract
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tagged-third-party-action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # CI expects this file to be rejected: actions of other owners must be
+      # pinned to a full commit SHA.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
