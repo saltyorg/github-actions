@@ -10,10 +10,10 @@ on:
 permissions:
   contents: read
 
-# Superseded pull request runs are cancelled; every pushed commit and release
-# keeps its own complete result.
+# Superseded pull request runs are cancelled. Every other run has a group of
+# its own, so pushed commits and releases never wait for or replace each other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
