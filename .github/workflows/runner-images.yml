@@ -53,7 +53,6 @@ jobs:
           persist-credentials: false
 
       - name: Record the runner's Python
-        id: python
         env:
           RUNNER_LABEL: ${{ matrix.runner }}
           IMAGE_STATUS: ${{ matrix.status }}
@@ -61,11 +60,6 @@ jobs:
           set -euo pipefail
           path=$(command -v python3)
           version=$(python3 -c 'import platform; print(platform.python_version())')
-          supported=false
-          if python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
-            supported=true
-          fi
-          echo "supported=$supported" >> "$GITHUB_OUTPUT"
           {
             echo "## $RUNNER_LABEL"
             echo
@@ -73,13 +67,13 @@ jobs:
             echo "- \`$path\`: Python $version"
             echo "- ImageOS: ${ImageOS:-unknown}, ImageVersion: ${ImageVersion:-unknown}"
           } >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$supported" != true ]]; then
-            echo "- Below the supported Python 3.11 floor; the actions cannot run here." >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning title=Unsupported runner Python::$RUNNER_LABEL provides Python $version; the actions require 3.11 or newer"
+          if ! python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+            echo "- Below the supported Python 3.10 floor." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Unsupported runner Python::$RUNNER_LABEL provides Python $version; the actions require 3.10 or newer"
+            exit 1
           fi
 
       - name: Run unit tests with warnings as errors
-        if: steps.python.outputs.supported == 'true'
         env:
           PYTHONWARNINGS: error
           PYTHONDEVMODE: '1'
@@ -93,5 +87,4 @@ jobs:
           fi
 
       - name: Compile Python modules with warnings as errors
-        if: steps.python.outputs.supported == 'true'
         run: python3 -W error -X dev -m compileall -q -f src tests
