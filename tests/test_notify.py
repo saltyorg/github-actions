@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import sys
 import unittest
 from datetime import UTC, datetime
+from email.message import Message
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -258,6 +260,25 @@ class DiscordDeliveryTests(unittest.TestCase):
         self.assertNotIn(webhook, str(raised.exception))
         self.assertNotIn("super-secret", str(raised.exception))
         self.assertEqual(len(opener.requests), 1)
+
+    def test_discord_http_error_is_reported_and_closed(self) -> None:
+        error = HTTPError(
+            "https://discord.com/api/webhooks/123/secret",
+            429,
+            "Too Many Requests",
+            Message(),
+            io.BytesIO(b'{"message": "rate limited"}'),
+        )
+        opener = RecordingOpener([error])
+
+        with self.assertRaisesRegex(RuntimeError, "HTTP 429") as raised:
+            send_notification(
+                "https://discord.com/api/webhooks/123/secret", {}, opener=opener
+            )
+
+        self.assertIs(raised.exception.__cause__, error)
+        self.assertTrue(error.fp.closed)
+        self.assertEqual(error.code, 429)
 
 
 if __name__ == "__main__":

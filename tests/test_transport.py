@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from salty_actions.transport import GitHubTransport
+from salty_actions.transport import AmbiguousRequestError, GitHubTransport
 
 from .http_fakes import FakeResponse, RecordingOpener
 
@@ -220,6 +220,64 @@ class GitHubTransportTests(unittest.TestCase):
 
         self.assertEqual(len(opener.requests), 4)
         self.assertEqual(sleeps, [60, 60, 60])
+
+
+class HTTPErrorCleanupTests(unittest.TestCase):
+    """Each handled HTTPError owns an open response body that must be closed."""
+
+    def assert_closed(self, errors: list[HTTPError]) -> None:
+        for error in errors:
+            self.assertTrue(error.fp.closed, f"HTTP {error.code} body left open")
+
+    def test_read_closes_retried_and_final_errors(self) -> None:
+        errors = [http_error(503), http_error(429), http_error(404)]
+        opener = RecordingOpener(list(errors))
+        transport = GitHubTransport("secret-token", opener=opener, sleep=lambda _: None)
+
+        with self.assertRaisesRegex(RuntimeError, "HTTP 404") as raised:
+            transport.get_json("/example")
+
+        self.assert_closed(errors)
+        cause = raised.exception.__cause__
+        self.assertIs(cause, errors[-1])
+        self.assertEqual(errors[-1].code, 404)
+        self.assertEqual(errors[-1].reason, "request failed")
+
+    def test_issue_write_closes_retried_and_final_errors(self) -> None:
+        errors = [http_error(429), http_error(502)]
+        opener = RecordingOpener(list(errors))
+        transport = GitHubTransport("secret-token", opener=opener, sleep=lambda _: None)
+
+        with self.assertRaisesRegex(AmbiguousRequestError, "HTTP 502"):
+            transport.send_json("/repos/o/r/issues", "POST", {"title": "t"})
+
+        self.assert_closed(errors)
+
+    def test_rejected_issue_write_closes_error(self) -> None:
+        error = http_error(422)
+        transport = GitHubTransport(
+            "secret-token", opener=RecordingOpener([error]), sleep=lambda _: None
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "HTTP 422"):
+            transport.send_json("/repos/o/r/issues", "PATCH", {"title": "t"})
+
+        self.assert_closed([error])
+
+    def test_mutation_closes_error(self) -> None:
+        for code, expected in [(409, AmbiguousRequestError), (500, RuntimeError)]:
+            with self.subTest(code=code):
+                error = http_error(code)
+                transport = GitHubTransport(
+                    "secret-token",
+                    opener=RecordingOpener([error]),
+                    sleep=lambda _: None,
+                )
+
+                with self.assertRaisesRegex(expected, f"HTTP {code}"):
+                    transport.post_mutation("/repos/o/r/actions/runs/1/rerun")
+
+                self.assert_closed([error])
 
 
 if __name__ == "__main__":

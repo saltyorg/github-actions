@@ -50,13 +50,15 @@ class GitHubTransport:
                         )
                     return json.loads(response.read().decode("utf-8"))
             except HTTPError as error:
-                delay = self._http_retry_delay(error, request_number)
-                if delay is not None and request_number < READ_ATTEMPTS - 1:
-                    self._sleep(delay)
-                    continue
-                raise RuntimeError(
-                    f"GitHub read request returned HTTP {error.code}"
-                ) from error
+                # The error owns the response body; close it once inspected.
+                with error:
+                    delay = self._http_retry_delay(error, request_number)
+                    if delay is not None and request_number < READ_ATTEMPTS - 1:
+                        self._sleep(delay)
+                        continue
+                    raise RuntimeError(
+                        f"GitHub read request returned HTTP {error.code}"
+                    ) from error
             except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
                 if isinstance(error, URLError) and isinstance(
                     error.reason, ssl.SSLCertVerificationError
@@ -110,18 +112,20 @@ class GitHubTransport:
                             "GitHub issue write returned an invalid response"
                         ) from error
             except HTTPError as error:
-                if error.code in {403, 429}:
-                    delay = self._http_retry_delay(error, attempt)
-                    if attempt < READ_ATTEMPTS - 1 and delay is not None:
-                        self._sleep(delay)
-                        continue
-                if error.code >= 500 or error.code in {408, 409}:
-                    raise AmbiguousRequestError(
-                        f"GitHub issue write acceptance is unknown (HTTP {error.code})"
+                with error:
+                    if error.code in {403, 429}:
+                        delay = self._http_retry_delay(error, attempt)
+                        if attempt < READ_ATTEMPTS - 1 and delay is not None:
+                            self._sleep(delay)
+                            continue
+                    if error.code >= 500 or error.code in {408, 409}:
+                        raise AmbiguousRequestError(
+                            "GitHub issue write acceptance is unknown "
+                            f"(HTTP {error.code})"
+                        ) from error
+                    raise RuntimeError(
+                        f"GitHub issue write returned HTTP {error.code}"
                     ) from error
-                raise RuntimeError(
-                    f"GitHub issue write returned HTTP {error.code}"
-                ) from error
             except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
                 raise AmbiguousRequestError(
                     "GitHub issue write acceptance is unknown after a transport failure"
@@ -137,13 +141,14 @@ class GitHubTransport:
                         f"GitHub mutation request returned HTTP {response.status}"
                     )
         except HTTPError as error:
-            if error.code in {409, 422}:
-                raise AmbiguousRequestError(
+            with error:
+                if error.code in {409, 422}:
+                    raise AmbiguousRequestError(
+                        f"GitHub mutation request returned HTTP {error.code}"
+                    ) from error
+                raise RuntimeError(
                     f"GitHub mutation request returned HTTP {error.code}"
                 ) from error
-            raise RuntimeError(
-                f"GitHub mutation request returned HTTP {error.code}"
-            ) from error
         except URLError as error:
             raise AmbiguousRequestError(
                 "GitHub mutation request ended without a definitive response"

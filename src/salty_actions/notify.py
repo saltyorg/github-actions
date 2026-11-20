@@ -106,9 +106,11 @@ def send_notification(
                     f"Discord notification returned HTTP {response.status}"
                 )
     except HTTPError as error:
-        raise RuntimeError(
-            f"Discord notification returned HTTP {error.code}"
-        ) from error
+        # The error owns the response body; close it once inspected.
+        with error:
+            raise RuntimeError(
+                f"Discord notification returned HTTP {error.code}"
+            ) from error
     except URLError as error:
         raise RuntimeError(
             "Discord notification ended without a definitive response"
