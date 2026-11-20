@@ -87,13 +87,17 @@ class CommandRunner:
                 ) from error
             if not retry or attempt == attempts - 1:
                 raise OperationError(f"{Path(command[0]).name}: {detail}")
-            retry_after = re.search(r"retry[- ]after\s*[:=]?\s*(\d+)", detail, re.IGNORECASE)
+            retry_after = re.search(
+                r"retry[- ]after\s*[:=]?\s*(\d+)", detail, re.IGNORECASE
+            )
             delay = (
                 int(retry_after[1])
                 if retry_after
                 else (
                     60
-                    if re.search(r"429|rate limit|too many requests", detail, re.IGNORECASE)
+                    if re.search(
+                        r"429|rate limit|too many requests", detail, re.IGNORECASE
+                    )
                     else 2**attempt
                 )
             )

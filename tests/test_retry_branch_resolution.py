@@ -79,7 +79,11 @@ class BranchPullResolutionTests(unittest.TestCase):
         self.assertEqual(
             self.client.branch_pull_calls,
             [
-                ("saltyorg/Saltbox", "balogan/Saltbox", "cloudplow-sqlite-sidecar-excludes")
+                (
+                    "saltyorg/Saltbox",
+                    "balogan/Saltbox",
+                    "cloudplow-sqlite-sidecar-excludes",
+                )
             ],
         )
 
@@ -153,7 +157,9 @@ class BranchPullResolutionTests(unittest.TestCase):
                 self.assertEqual(self.client.rerun_calls, [])
                 self.assertEqual(self.sleeps, [])
 
-    def test_unrelated_candidate_with_missing_dates_does_not_block_resolution(self) -> None:
+    def test_unrelated_candidate_with_missing_dates_does_not_block_resolution(
+        self,
+    ) -> None:
         other = branch_pull()
         other["head"]["repo"]["id"] = 665367446
         other.pop("created_at")

@@ -1,4 +1,5 @@
 """Prepare native Scout results for GitHub's Code Scanning location limits."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -19,5 +20,7 @@ def code_scanning_report(payload: dict) -> dict:
             if "locations" in result:
                 result["locations"] = rows(result["locations"], "SARIF locations")[:1]
             if "relatedLocations" in result:
-                result["relatedLocations"] = rows(result["relatedLocations"], "SARIF related locations")[:999]
+                result["relatedLocations"] = rows(
+                    result["relatedLocations"], "SARIF related locations"
+                )[:999]
     return report

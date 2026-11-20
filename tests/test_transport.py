@@ -60,9 +60,7 @@ class GitHubTransportTests(unittest.TestCase):
 
     def test_post_mutation_sends_one_json_request(self) -> None:
         opener = RecordingOpener([FakeResponse(201)])
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=lambda _: None
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=lambda _: None)
 
         transport.post_mutation(
             "/repos/saltyorg/Saltbox/actions/runs/1234/rerun-failed-jobs"
@@ -76,9 +74,7 @@ class GitHubTransportTests(unittest.TestCase):
     def test_transport_errors_use_four_attempts_with_exponential_delays(self) -> None:
         opener = RecordingOpener([URLError("reset") for _ in range(4)])
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         with self.assertRaisesRegex(RuntimeError, "after four attempts"):
             transport.get_json("/example")
@@ -94,9 +90,7 @@ class GitHubTransportTests(unittest.TestCase):
             ]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         result = transport.get_json("/example")
 
@@ -108,9 +102,7 @@ class GitHubTransportTests(unittest.TestCase):
         retry_at = datetime(2026, 9, 4, 12, 2, tzinfo=UTC)
         opener = RecordingOpener(
             [
-                http_error(
-                    429, headers={"Retry-After": format_datetime(retry_at)}
-                ),
+                http_error(429, headers={"Retry-After": format_datetime(retry_at)}),
                 FakeResponse(200, {}),
             ]
         )
@@ -160,9 +152,7 @@ class GitHubTransportTests(unittest.TestCase):
             ]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         transport.get_json("/example")
 
@@ -173,9 +163,7 @@ class GitHubTransportTests(unittest.TestCase):
             [http_error(403, message="Resource not accessible by integration")]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
             transport.get_json("/example")
@@ -188,9 +176,7 @@ class GitHubTransportTests(unittest.TestCase):
             [http_error(429), FakeResponse(200, {"status": "completed"})]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         transport.get_json("/example")
 
@@ -204,9 +190,7 @@ class GitHubTransportTests(unittest.TestCase):
             ]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         transport.get_json("/example")
 
@@ -220,9 +204,7 @@ class GitHubTransportTests(unittest.TestCase):
             ]
         )
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         transport.get_json("/example")
 
@@ -231,9 +213,7 @@ class GitHubTransportTests(unittest.TestCase):
     def test_final_rate_limit_failure_does_not_sleep(self) -> None:
         opener = RecordingOpener([http_error(429) for _ in range(4)])
         sleeps: list[float] = []
-        transport = GitHubTransport(
-            "secret-token", opener=opener, sleep=sleeps.append
-        )
+        transport = GitHubTransport("secret-token", opener=opener, sleep=sleeps.append)
 
         with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
             transport.get_json("/example")

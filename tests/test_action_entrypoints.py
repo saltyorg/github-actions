@@ -40,7 +40,9 @@ def action_command(action: str) -> str:
 
 
 class RetryEntrypointTests(unittest.TestCase):
-    def test_orphaned_merged_pr_exits_successfully_with_superseded_outputs(self) -> None:
+    def test_orphaned_merged_pr_exits_successfully_with_superseded_outputs(
+        self,
+    ) -> None:
         requests: list[Request] = []
         responses = {
             (
@@ -74,8 +76,9 @@ class RetryEntrypointTests(unittest.TestCase):
                 "NON_RETRYABLE_JOBS": "ansible-lint\nsaltbox-lint",
             }
 
-            with patch.dict(os.environ, env, clear=True), patch(
-                "salty_actions.retry.GitHubClient", return_value=client
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("salty_actions.retry.GitHubClient", return_value=client),
             ):
                 self.assertEqual(retry_main(), 0)
 

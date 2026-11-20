@@ -79,9 +79,7 @@ def report_v2(
     report.update(
         schema=2,
         run_id=run,
-        scanned_at=(
-            datetime.now(UTC) - timedelta(hours=hours_ago)
-        ).isoformat(),
+        scanned_at=(datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat(),
         inventory=package_inventory(version, removed=removed),
         provenance={"trivy_version": "v0.74.0"},
         availability={

@@ -280,8 +280,12 @@ def run_action(
             )
         except (OSError, TypeError, ValueError, KeyError, RecursionError):
             # Keep the authoritative result even if optional enrichment fails.
-            notification["embeds"][0]["description"] += "\nNotification details unavailable."
-            print("::warning::Notification details unavailable; sending workflow result.")
+            notification["embeds"][0]["description"] += (
+                "\nNotification details unavailable."
+            )
+            print(
+                "::warning::Notification details unavailable; sending workflow result."
+            )
     send_notification(_env(env, "DISCORD_WEBHOOK"), notification, opener=opener)
     print("Discord notification sent successfully")
 
