@@ -28,7 +28,31 @@
                 "dependencies",
                 "github-actions"
             ]
+        },
+        {
+            "description": "Automerge action digest and patch updates once every CI check passes",
+            "matchManagers": [
+                "github-actions"
+            ],
+            "matchUpdateTypes": [
+                "digest",
+                "pinDigest",
+                "patch"
+            ],
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "rebase",
+            "platformAutomerge": false,
+            "minimumReleaseAge": "3 days"
+        },
+        {
+            "description": "Scanner versions change security results and CI does not run them; review manually",
+            "matchDepNames": [
+                "aquasecurity/trivy",
+                "docker/scout-cli"
+            ],
+            "automerge": false
         }
     ],
-    "rebaseWhen": "conflicted"
+    "rebaseWhen": "behind-base-branch"
 }
