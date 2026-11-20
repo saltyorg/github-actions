@@ -26,8 +26,9 @@ inputs:
     description: Verify Alpine fixes in disposable published-image containers; candidates never execute this probe
     default: 'true'
   github-token:
-    description: Token for authenticated read-only scanner release downloads
-    default: ${{ github.token }}
+    description: Unused and kept for compatibility; scanner releases are downloaded anonymously
+    deprecationMessage: Scanner releases are downloaded anonymously; remove this input
+    default: ''
   dockerhub-user:
     description: Optional Docker Hub user for Scout backend authentication
     default: ''
@@ -57,7 +58,6 @@ runs:
       id: scan
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
         SECURITY_IMAGE: ${{ inputs.image }}
         SECURITY_NAME: ${{ inputs.name }}
         SECURITY_PLATFORM: ${{ inputs.platform }}

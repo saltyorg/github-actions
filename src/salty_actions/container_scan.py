@@ -13,7 +13,13 @@ from tempfile import TemporaryDirectory
 from .container_findings import obj, scout_findings, text, trivy_findings
 from .container_packages import assess, digest, inventory
 from .container_sarif import code_scanning_report
-from .container_tools import CommandRunner, OperationError, install_tool, safe_error
+from .container_tools import (
+    CommandRunner,
+    OperationError,
+    install_tool,
+    safe_error,
+    without_github_credentials,
+)
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 PLATFORM = re.compile(r"linux/(?:amd64|arm64(?:/v8)?|arm/v7)\Z")
@@ -117,7 +123,8 @@ def scan(
         raise ValueError("published assessments require Scout and KEV coverage")
     text(str(output), "output directory")
     output.mkdir(parents=True, exist_ok=True)
-    runner = runner or CommandRunner()
+    # Docker and both scanners run without the workflow's GitHub tokens.
+    runner = runner or CommandRunner(environment=without_github_credentials(os.environ))
     report: dict = {
         "schema": 2,
         "kind": kind,
@@ -233,9 +240,7 @@ def scan(
                     )
                     continue
                 try:
-                    binary = installer(
-                        engine, version, architecture, work / engine, runner
-                    )
+                    binary = installer(engine, version, architecture, work / engine)
                 except (OperationError, OSError, ValueError) as error:
                     report["scanners"][engine] = "error"
                     report["errors"].append(f"{engine} setup: {safe_error(str(error))}")

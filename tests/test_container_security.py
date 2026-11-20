@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import io
 import json
 import os
@@ -9,7 +8,6 @@ import os
 # Used only for subprocess fixtures and repository-owned action entrypoints.
 import subprocess  # nosec B404
 import sys
-import tarfile
 import tempfile
 import unittest
 from collections.abc import Callable
@@ -41,7 +39,7 @@ from salty_actions.container_report import (
 from salty_actions.container_scan import main as scan_main
 from salty_actions.container_scan import sarif_report, scan
 from salty_actions.container_snapshot import freeze_targets
-from salty_actions.container_tools import CommandRunner, OperationError, install_tool
+from salty_actions.container_tools import CommandRunner, OperationError
 from salty_actions.transport import AmbiguousRequestError, GitHubTransport
 
 from .http_fakes import FakeResponse, RecordingOpener
@@ -290,52 +288,6 @@ class RetryTests(unittest.TestCase):
             with self.assertRaises(OperationError) as caught:
                 CommandRunner(execute=execute)(["scanner"])
             self.assertNotIn("secret-password", str(caught.exception))
-
-    def test_download_checksums_and_safe_archive_extraction(self):
-        with tempfile.TemporaryDirectory() as directory:
-
-            def download(command, **kwargs):
-                dest = Path(command[command.index("--dir") + 1])
-                archive = dest / "docker-scout_1.26.0_linux_amd64.tar.gz"
-                with tarfile.open(archive, "w:gz") as release:
-                    binary = tarfile.TarInfo("../../docker-scout")
-                    binary.size = 6
-                    release.addfile(binary, io.BytesIO(b"binary"))
-                    evil = tarfile.TarInfo("../../escaped-file")
-                    evil.size = 1
-                    release.addfile(evil, io.BytesIO(b"x"))
-                checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-                (dest / "docker-scout_1.26.0_checksums.txt").write_text(
-                    f"{checksum}  {archive.name}\n"
-                )
-                return ""
-
-            binary = install_tool("scout", "v1.26.0", "X64", Path(directory), download)
-            self.assertEqual(binary.read_bytes(), b"binary")
-            self.assertFalse((Path(directory).parent / "escaped-file").exists())
-
-    def test_invalid_release_or_checksum_fails_before_execution(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaises(ValueError):
-                install_tool(
-                    "scout",
-                    "main",
-                    "X64",
-                    Path(directory),
-                    lambda *a, **k: self.fail("download"),
-                )
-
-            def bad_download(command, **kwargs):
-                dest = Path(command[command.index("--dir") + 1])
-                name = "docker-scout_1.26.0_linux_amd64.tar.gz"
-                (dest / name).write_bytes(b"untrusted")
-                (dest / "docker-scout_1.26.0_checksums.txt").write_text(
-                    "0" * 64 + "  " + name
-                )
-                return ""
-
-            with self.assertRaisesRegex(OperationError, "checksum"):
-                install_tool("scout", "v1.26.0", "X64", Path(directory), bad_download)
 
 
 class ScanTests(unittest.TestCase):

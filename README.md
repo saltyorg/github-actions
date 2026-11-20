@@ -241,6 +241,10 @@ release when adopting them; Renovate manages subsequent version updates.
 
 `container-scan` exports one image to a temporary archive and runs pinned,
 checksum-verified Trivy and Docker Scout releases against those same bytes.
+It downloads the scanner releases anonymously over HTTPS, because an
+authenticated request is subject to the publishing organization's IP allow
+list, and runs Docker and the scanners without `GH_TOKEN` or `GITHUB_TOKEN`.
+The `github-token` input is unused and kept for compatibility.
 Python installs and invokes the scanners, normalizes their structured reports,
 and writes `report.json`, raw Trivy JSON, raw Scout/KEV SARIF, and a combined
 `findings.sarif`. It also writes `scout-code-scanning.sarif` with bounded file
@@ -281,7 +285,7 @@ unwritable output paths fail with exit code 2.
 Scout coverage. Published scans cannot disable Scout. Trusted publication must
 keep KEV enforcement enabled.
 
-The action requires Linux X64/ARM64, Python 3.10–3.15, `gh`, `curl`, Docker API 1.49+
+The action requires Linux X64/ARM64, Python 3.10–3.15, `curl`, Docker API 1.49+
 with platform-aware image inspection and export, and enough disk
 space to export the image. The image platform can be `linux/amd64`, `linux/arm64`,
 or `linux/arm/v7`. Scanners read exported bytes. Published Alpine assessments

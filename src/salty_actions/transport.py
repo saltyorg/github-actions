@@ -170,15 +170,20 @@ class GitHubTransport:
         )
 
     def _http_retry_delay(self, error: HTTPError, request_number: int) -> float | None:
-        retry_after = _retry_after_seconds(error, self._now())
-        if error.code == 408 or 500 <= error.code < 600:
-            return retry_after if retry_after is not None else 2**request_number
-        if not _is_rate_limit_error(error):
-            return None
-        if retry_after is not None:
-            return retry_after
-        reset_delay = _rate_limit_reset_seconds(error, self._now())
-        return reset_delay if reset_delay is not None else RATE_LIMIT_FALLBACK_SECONDS
+        return http_retry_delay(error, request_number, self._now())
+
+
+def http_retry_delay(error: HTTPError, request_number: int, now: float) -> float | None:
+    """Return the delay before replaying a GitHub read, or None if it is final."""
+    retry_after = _retry_after_seconds(error, now)
+    if error.code == 408 or 500 <= error.code < 600:
+        return retry_after if retry_after is not None else 2**request_number
+    if not _is_rate_limit_error(error):
+        return None
+    if retry_after is not None:
+        return retry_after
+    reset_delay = _rate_limit_reset_seconds(error, now)
+    return reset_delay if reset_delay is not None else RATE_LIMIT_FALLBACK_SECONDS
 
 
 def _retry_after_seconds(error: HTTPError, now: float) -> float | None:
