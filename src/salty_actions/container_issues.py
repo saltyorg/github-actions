@@ -253,6 +253,28 @@ def tracking_lines(tracking: dict, repository: str = "") -> list[str]:
     return lines
 
 
+def affected_images(group: dict, tracking: dict | None) -> list[str]:
+    """Name each affected image, separating fresh evidence from last known."""
+    current: dict[str, set[str]] = {}
+    last_known: dict[str, set[str]] = {}
+    for item in group["observations"]:
+        current.setdefault(item["name"], set())
+        last_known.setdefault(item["name"], set())
+        bucket = last_known if item.get("evidence_status") == "last known" else current
+        bucket[item["name"]].add(item["platform"])
+    if not current:
+        return []
+    active = not tracking or tracking["status"] in {"detected", "incomplete"}
+    lines = ["Affected images:" if active else "Previously affected images:"]
+    for name in sorted(current):
+        stale = last_known[name] - current[name]
+        parts = [", ".join(sorted(current[name]))] if current[name] else []
+        if stale:
+            parts.append("last known on " + ", ".join(sorted(stale)))
+        lines.append(f"- `{name}`: " + "; ".join(parts))
+    return [*lines, ""]
+
+
 def managed_body(
     scope: str,
     group: dict,
@@ -279,6 +301,7 @@ def managed_body(
         ),
         "",
     ]
+    lines.extend(affected_images(group, tracking))
     if tracking and tracking["status"] not in {"detected", "incomplete"}:
         lines.extend(["Last detected observations and availability at that time:", ""])
     elif tracking:
@@ -377,7 +400,7 @@ def managed_body(
     lines.extend(
         [
             "",
-            "Resolution requires published package evidence and two complete assessments at least six hours apart.",
+            "Resolution requires published package evidence and two complete assessments at least six hours apart, each covering every affected image.",
             END,
         ]
     )

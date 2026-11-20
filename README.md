@@ -321,9 +321,10 @@ it in the reporting job so every matrix scan uses the same snapshot.
 ```
 
 `container-report` aggregates scans of published images and proposes or applies
-issue operations. `expected-targets` points to a JSON file declaring the complete
-image set for one stable `scope`. Each entry contains `name`, `platform`, an
-immutable `image` reference, and the mutable `tracking_reference` whose current
+issue operations. `expected-targets` points to a JSON file declaring the image
+set this run assessed for one stable `scope`: either every published image, or
+only the images one publication job pushed. Each entry contains `name`,
+`platform`, an immutable `image` reference, and the mutable `tracking_reference` whose current
 manifest digest must match. Resolve and freeze that image set before matrix
 scanning. Use the same manifest-index digest for the corresponding platforms.
 
@@ -349,6 +350,17 @@ Every report requires a valid assessment timestamp. Partial assessments retain
 prior observations for unavailable target/scanner coverage and label those rows
 `last known`. Successful current coverage replaces the corresponding historical
 rows, including when another target or scanner remains unavailable.
+
+Repositories that publish variants or tags from separate jobs may report each
+job's own image set into the shared scope. Every issue lists its affected
+images by target name and platform, marking those outside the current run as
+`last known`. A run that finds an image clean removes that image from the list
+and cannot mark the images it did not assess as fixed. The issue stays detected
+while any image remains last known. Closure needs one complete assessment that
+covers every image the issue ever recorded as affected and every image assessed
+when it was last detected. A partial run that leaves out any of those images
+never closes the issue and does not reset a pending confirmation. Without a
+periodic full scan, such an issue stays open for review.
 
 The tool manages one issue per vulnerability/package/distro identity within the
 scope, combining architectures and variants. It preserves scanner disagreement,
@@ -454,7 +466,9 @@ An existing issue continues to track lower severities. Missing findings keep
 the issue open for review when the package version is unchanged or a fix is
 unverified. Automatic closure requires all of the following:
 
-- Every required variant/platform has complete current scanner coverage.
+- Every required variant/platform has complete current scanner coverage. This
+  includes every image the issue has recorded as affected, and every image
+  assessed when the finding was last detected.
 - Complete published inventories prove removal of the previously identified
   binary/source package, or changed package versions satisfying Alpine vendor
   fixed-version evidence. Changing an unrelated image layer is insufficient.
@@ -463,7 +477,8 @@ unverified. Automatic closure requires all of the following:
   additional scans inside that interval do not count as confirmation.
 
 New detection resets confirmation. Incomplete assessments and changes to the
-published images or reporting scope invalidate pending confirmation. An advisory
+published images invalidate pending confirmation. A complete partial assessment
+that leaves out a tracked image changes nothing. An advisory
 withdrawal or corrected match without package remediation requires manual review.
 Intentional target removal is a scope change, not proof that a package was fixed.
 Human reopening invalidates earlier automatic resolution evidence.

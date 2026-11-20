@@ -295,6 +295,16 @@ def retain_unassessed(
     return merged
 
 
+def tracked_targets(state: dict) -> set[tuple[str, str]]:
+    """Every published target an issue's closure must cover."""
+    rows = [
+        *state["scope"],
+        *state["affected"],
+        *(state.get("group") or {}).get("observations", []),
+    ]
+    return {(row["name"], row["platform"]) for row in rows}
+
+
 def evolve(
     previous: dict | None,
     group: dict | None,
@@ -321,11 +331,17 @@ def evolve(
         ({"name": t["name"], "platform": t["platform"]} for t in assessment["targets"]),
         key=lambda t: (t["name"], t["platform"]),
     )
+    assessed = {(t["name"], t["platform"]) for t in assessment["targets"]}
+    # Current exposure on targets outside this run's image set stays visible.
+    exposure_elsewhere = state["status"] in {"detected", "incomplete"} and any(
+        (row["name"], row["platform"]) not in assessed
+        for row in (state["group"] or {}).get("observations", [])
+    )
     if group is not None:
         # Routine scan run URLs/timestamps are not substantive issue changes.
         state["group"] = (
             {key: value for key, value in group.items() if key != "run_url"}
-            if complete
+            if complete and not exposure_elsewhere
             else retain_unassessed(state["group"], group, assessment)
         )
         known = {(t["name"], t["platform"]): t for t in state["affected"]}
@@ -359,10 +375,22 @@ def evolve(
         state["group"] = retain_unassessed(state["group"], None, assessment)
         state["status"], state["pending"] = "incomplete", None
         state.pop("verification", None)
+    elif exposure_elsewhere:
+        # A partial image set cannot clear targets it did not assess: their rows
+        # stay as last known while the assessed, now clean targets drop out.
+        state["group"] = retain_unassessed(state["group"], None, assessment)
+        state["status"], state["pending"] = "detected", None
+        state.pop("verification", None)
+    elif state["status"] in {"review", "pending"} and not (
+        tracked_targets(state) <= assessed
+    ):
+        pass  # Says nothing about the tracked targets; keep their confirmation.
     elif state["status"] != "resolved":
         state["status"] = "review"
         eligible = bool(
-            assessment["run_id"] and assessment["at"] and scope == state["scope"]
+            assessment["run_id"]
+            and assessment["at"]
+            and tracked_targets(state) <= assessed
         )
         if eligible:
             age = (datetime.now(UTC) - instant(assessment["at"])).total_seconds()

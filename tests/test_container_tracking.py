@@ -348,6 +348,119 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("Vendor fix", self.client.issues[0]["body"])
 
 
+def image(name, *, run="100", hours_ago=18, fixed=False):
+    report = (
+        report_v2(run, clean=True, version="3.14.8-r0", hours_ago=hours_ago)
+        if fixed
+        else report_v2(run, hours_ago=hours_ago)
+    )
+    report["target"]["name"] = name
+    return report
+
+
+def apply_images(client, *reports):
+    """Reconcile one publication job's image set, as a variant workflow would."""
+    expected = [
+        {**r["target"], "tracking_reference": f"example/base:{r['target']['name']}"}
+        for r in reports
+    ]
+    digests = {
+        target["tracking_reference"]: target["image"].split("@", 1)[1]
+        for target in expected
+    }
+    return reconcile(
+        list(reports),
+        expected,
+        "containers",
+        client,
+        dry_run=False,
+        runner=lambda command, **kwargs: json.dumps(
+            {"manifest": {"digest": digests[command[4]]}}
+        ),
+    )
+
+
+BOTH = ("latest", "nonroot")
+
+
+class PartialImageSetTests(unittest.TestCase):
+    """Variant jobs that each reconcile only the images they published."""
+
+    def setUp(self):
+        self.client = AppliedIssues()
+        apply_images(self.client, image("latest", hours_ago=20))
+        apply_images(self.client, image("nonroot", run="101", hours_ago=19))
+
+    def state(self):
+        return read_state(self.client.issues[0]["body"])
+
+    def affected(self):
+        body = self.client.issues[0]["body"]
+        return body.split("mages:\n", 1)[1].split("\n\n", 1)[0].splitlines()
+
+    def test_each_job_shares_one_issue_that_names_every_affected_image(self):
+        self.assertEqual(len(self.client.issues), 1)
+        self.assertEqual(self.state()["status"], "detected")
+        self.assertIn("Affected images:", self.client.issues[0]["body"])
+        self.assertEqual(
+            self.affected(),
+            ["- `latest`: last known on linux/amd64", "- `nonroot`: linux/amd64"],
+        )
+
+    def test_fixed_variant_is_dropped_while_the_other_stays_detected(self):
+        for run, hours in (("102", 16), ("103", 8)):
+            apply_images(
+                self.client, image("latest", run=run, hours_ago=hours, fixed=True)
+            )
+            self.assertEqual(self.state()["status"], "detected")
+            self.assertEqual(
+                self.affected(), ["- `nonroot`: last known on linux/amd64"]
+            )
+        self.assertEqual(self.client.issues[0]["state"], "open")
+
+    def test_only_an_assessment_of_every_affected_image_can_close(self):
+        apply_images(self.client, image("latest", run="102", hours_ago=17, fixed=True))
+        for run, hours in (("103", 16), ("104", 8)):
+            apply_images(
+                self.client, image("nonroot", run=run, hours_ago=hours, fixed=True)
+            )
+            self.assertEqual(self.state()["status"], "review")
+            self.assertIsNone(self.state()["pending"])
+        self.assertEqual(self.client.issues[0]["state"], "open")
+        for run, hours in (("105", 12), ("106", 5)):
+            apply_images(
+                self.client,
+                *(image(n, run=run, hours_ago=hours, fixed=True) for n in BOTH),
+            )
+        self.assertEqual(self.client.issues[0]["state"], "closed")
+        verified = {row["name"] for row in self.state()["verification"]}
+        self.assertEqual(verified, set(BOTH))
+
+    def test_a_partial_job_between_full_confirmations_keeps_the_pending_proof(self):
+        apply_images(
+            self.client,
+            *(image(n, run="102", hours_ago=12, fixed=True) for n in BOTH),
+        )
+        self.assertEqual(self.state()["status"], "pending")
+        apply_images(self.client, image("latest", run="103", hours_ago=9, fixed=True))
+        self.assertEqual(self.state()["status"], "pending")
+        self.assertEqual(self.state()["pending"]["run_id"], "102")
+        apply_images(
+            self.client,
+            *(image(n, run="104", hours_ago=5, fixed=True) for n in BOTH),
+        )
+        self.assertEqual(self.client.issues[0]["state"], "closed")
+
+    def test_recurrence_after_a_full_clean_run_names_only_the_affected_variant(self):
+        apply_images(
+            self.client,
+            *(image(n, run="102", hours_ago=12, fixed=True) for n in BOTH),
+        )
+        apply_images(self.client, image("nonroot", run="103", hours_ago=5))
+        self.assertEqual(self.state()["status"], "detected")
+        self.assertEqual(self.affected(), ["- `nonroot`: linux/amd64"])
+
+
 class PackageEvidenceTests(unittest.TestCase):
     def test_already_fixed_versions_do_not_query_repository_policy(self):
         fake = """#!/bin/sh
