@@ -8,8 +8,8 @@ The examples below use `v1.1.0`. The branch-based PR lookup and `saltbox-lint`
 action described below are not included in that release.
 
 The Python actions (`retry`, `notify` and the container security actions) run
-on the runner's own `python3` and support Python 3.11–3.15. CI runs the unit
-tests on 3.11, 3.15 and the runner's `python3` with warnings as errors, and a
+on the runner's own `python3` and support Python 3.10–3.15. CI runs the unit
+tests on 3.10, 3.15 and the runner's `python3` with warnings as errors, and a
 weekly workflow repeats them on every GitHub-hosted Ubuntu runner image.
 
 ### `retry`
@@ -281,7 +281,7 @@ unwritable output paths fail with exit code 2.
 Scout coverage. Published scans cannot disable Scout. Trusted publication must
 keep KEV enforcement enabled.
 
-The action requires Linux X64/ARM64, Python 3.11–3.15, `gh`, `curl`, Docker API 1.49+
+The action requires Linux X64/ARM64, Python 3.10–3.15, `gh`, `curl`, Docker API 1.49+
 with platform-aware image inspection and export, and enough disk
 space to export the image. The image platform can be `linux/amd64`, `linux/arm64`,
 or `linux/arm/v7`. Scanners read exported bytes. Published Alpine assessments
