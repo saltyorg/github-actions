@@ -30,7 +30,7 @@
             ]
         },
         {
-            "description": "Automerge action digest and patch updates once every CI check passes",
+            "description": "Group action digest and patch updates apart from minors so the group can automerge once every CI check passes",
             "matchManagers": [
                 "github-actions"
             ],
@@ -39,6 +39,7 @@
                 "pinDigest",
                 "patch"
             ],
+            "groupName": "github-actions patch",
             "automerge": true,
             "automergeType": "pr",
             "automergeStrategy": "rebase",
