@@ -37,6 +37,87 @@ jobs:
           SALTY_ACTIONS_DOCKER_TEST: '1'
         run: python3 -m unittest tests.test_container_platforms -v
 
+  # Organization IP allow lists apply to authenticated requests from these
+  # runners, so the scanners must install and scan with the workflow token in
+  # the environment, as in a calling workflow, without ever using it.
+  scanner-downloads:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      # alpine:3.22, pinned by its multi-platform index digest.
+      SCAN_IMAGE: alpine@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker with the containerd image store
+        uses: docker/setup-docker-action@3f1ab1ab0e29231562e4db4ca600c1a49653bac6 # v5.7.0
+        with:
+          set-host: true
+          daemon-config: |
+            {"features": {"containerd-snapshotter": true}}
+
+      - name: Install the pinned scanner releases anonymously
+        env:
+          SALTY_NETWORK_TESTS: '1'
+        run: python3 -m unittest tests.test_scanner_downloads -v
+
+      - name: Pull a small public image
+        run: docker pull --platform linux/amd64 "$SCAN_IMAGE"
+
+      - name: Scan the image with Trivy
+        id: scan
+        uses: ./container-scan
+        with:
+          image: ${{ env.SCAN_IMAGE }}
+          name: alpine
+          platform: linux/amd64
+          output-directory: ${{ runner.temp }}/container-scan
+          # Scout needs Docker Hub credentials, which this repository's CI
+          # does not hold; the network test above covers its installation.
+          scout-enabled: 'false'
+          enforce-kev: 'false'
+
+      - name: Require a complete Trivy scan with a downloaded database
+        env:
+          REPORT_DIRECTORY: ${{ steps.scan.outputs.report-directory }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          directory = Path(os.environ["REPORT_DIRECTORY"])
+          report = json.loads((directory / "report.json").read_text())
+          trivy = json.loads((directory / "trivy.json").read_text())
+          database = report["provenance"]["trivy_database"] or {}
+          print(json.dumps(
+              {
+                  "scanners": report["scanners"],
+                  "errors": report["errors"],
+                  "trivy_database": database,
+                  "os": trivy["Metadata"]["OS"],
+                  "findings": len(report["findings"]),
+              },
+              indent=2,
+          ))
+          problems = [
+              error for error in report["errors"] if not error.startswith("Scout")
+          ]
+          if report["scanners"].get("trivy") != "complete":
+              problems.append("Trivy scan did not complete")
+          if not database.get("DownloadedAt"):
+              problems.append("Trivy database was not downloaded")
+          if trivy["Metadata"]["OS"]["Family"] != "alpine":
+              problems.append("Trivy did not analyse the alpine image")
+          for problem in problems:
+              print(f"::error::{problem}")
+          raise SystemExit(1 if problems else 0)
+          PYTHON
+
   # The oldest and newest supported Python releases.
   python-bounds:
     name: python-bounds (${{ matrix.python }})
