@@ -1,10 +1,11 @@
 """Apply optional, run-bound presentation data to an existing notification."""
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 
 def _text(value: object, limit: int) -> str:
@@ -25,7 +26,7 @@ def apply_notification_data(
         raise ValueError('notification data exceeds 64 KiB')
     data = json.loads(raw)
     if not isinstance(data, dict):
-        raise ValueError('notification data must be an object')
+        raise TypeError('notification data must be an object')
     for key, expected in [('schema', 1), ('run_id', workflow_run['id']),
                           ('run_attempt', workflow_run['run_attempt'])]:
         if type(data.get(key)) is not int or data[key] != expected:

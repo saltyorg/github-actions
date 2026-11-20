@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from contextlib import redirect_stdout
-from io import StringIO
 import hashlib
 import json
+import sys
+import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
-from .test_notify import NOW, PullRequestEnricher, workflow_event
-from .http_fakes import FakeResponse, RecordingOpener
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from salty_actions.notify import build_notification, run_action
+
+from .http_fakes import FakeResponse, RecordingOpener
+from .test_notify import NOW, PullRequestEnricher, workflow_event
 
 
 class LegacyCompatibilityTests(unittest.TestCase):

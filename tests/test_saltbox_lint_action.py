@@ -7,14 +7,13 @@ import http.server
 import io
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import tarfile
 import tempfile
 import threading
 import unittest
-
+from pathlib import Path
 
 ACTION = Path(__file__).resolve().parents[1] / "saltbox-lint"
 VERSION = "v1.2.3"

@@ -6,21 +6,15 @@ import os
 
 # Run the repository-owned probe with a controlled fake APK executable.
 import subprocess  # nosec B404
+import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from .test_container_security import (
-    BOT,
-    DIGEST,
-    FakeIssueClient,
-    TARGET,
-    scan_report,
-    scout_report,
-    trivy_report,
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from salty_actions.container_findings import scout_findings
 from salty_actions.container_issues import issue_marker
 from salty_actions.container_packages import (
@@ -34,6 +28,16 @@ from salty_actions.container_report import reconcile
 from salty_actions.container_scan import scan
 from salty_actions.container_tools import CommandRunner, OperationError
 from salty_actions.container_tracking import read_state
+
+from .test_container_security import (
+    BOT,
+    DIGEST,
+    TARGET,
+    FakeIssueClient,
+    scan_report,
+    scout_report,
+    trivy_report,
+)
 
 
 class AppliedIssues(FakeIssueClient):
@@ -76,7 +80,7 @@ def report_v2(
         schema=2,
         run_id=run,
         scanned_at=(
-            datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+            datetime.now(UTC) - timedelta(hours=hours_ago)
         ).isoformat(),
         inventory=package_inventory(version, removed=removed),
         provenance={"trivy_version": "v0.74.0"},
@@ -214,7 +218,7 @@ class LifecycleTests(unittest.TestCase):
                 }
             elif change == "time":
                 report["scanned_at"] = (
-                    datetime.now(timezone.utc) - timedelta(days=2)
+                    datetime.now(UTC) - timedelta(days=2)
                 ).isoformat()
             else:
                 report["inventory"] = {"status": "unknown"}
@@ -493,7 +497,7 @@ esac
             arguments = command[command.index("apk-fix-probe") + 2 :]
             responses = ["APK\tapk-tools 3.0.8"]
             for index in range(0, len(arguments), 4):
-                key, package, installed, fixed = arguments[index : index + 4]
+                key, _package, _installed, fixed = arguments[index : index + 4]
                 comparison = "=" if status == "fixed" else "<"
                 responses.append(
                     f"CHECK\t{key}\t{fixed}\t{comparison}\t3.14.8-r0\t{status}"

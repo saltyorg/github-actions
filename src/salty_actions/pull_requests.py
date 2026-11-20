@@ -116,7 +116,7 @@ def _timestamp(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        timestamp = datetime.fromisoformat(value)
     except ValueError:
         return None
     return timestamp if timestamp.tzinfo is not None else None
