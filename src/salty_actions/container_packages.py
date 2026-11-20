@@ -1,4 +1,4 @@
-"""Inventory and verify Alpine fixes without modifying published images."""
+"""Inventory packages and verify fixes without modifying published images."""
 
 from __future__ import annotations
 
@@ -14,6 +14,14 @@ from .container_tools import OperationError, safe_error
 
 PACKAGE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9+_.-]{0,255}\Z")
 VERSION = re.compile(r"[0-9][a-zA-Z0-9+_.:~-]{0,127}\Z")
+# Application ecosystems whose names and versions can prove a fix, mapped to
+# the Trivy language result types that inventory them.
+APPLICATION_TYPES = {"golang": frozenset({"gobinary", "gomod"})}
+# Go toolchain and module releases. Prereleases, pseudo-versions and build
+# metadata are deliberately unparsable, so they never prove a fix.
+GO_VERSION = re.compile(
+    r"v?(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(?:\.(0|[1-9][0-9]{0,8}))?\Z"
+)
 
 
 def digest(value: object) -> str:
@@ -22,11 +30,100 @@ def digest(value: object) -> str:
     ).hexdigest()
 
 
+def single_line(value: object, *, empty: bool = False) -> bool:
+    if empty and value == "":
+        return True
+    try:
+        text(value, "language package field")
+    except ValueError:
+        return False
+    return True
+
+
+def application_inventory(payload: dict) -> dict:
+    """List every Trivy language result; any unlisted result leaves it unknown."""
+    results = []
+    complete = True
+    for raw_result in rows(payload.get("Results", []), "Trivy results"):
+        result = obj(raw_result, "Trivy result")
+        if result.get("Class") != "lang-pkgs":
+            continue
+        kind, target, packages = (
+            result.get("Type"),
+            result.get("Target"),
+            result.get("Packages"),
+        )
+        if (
+            not single_line(kind)
+            or not single_line(target)
+            or not isinstance(packages, list)
+        ):
+            complete = False
+            continue
+        listed = set()
+        for raw in packages:
+            # A versionless entry, such as a development build, is still listed.
+            name = raw.get("Name") if isinstance(raw, dict) else None
+            version = raw.get("Version", "") if isinstance(raw, dict) else None
+            if not single_line(name) or not single_line(version, empty=True):
+                complete = False
+                continue
+            listed.add((name, version))
+        results.append(
+            {
+                "type": kind,
+                "target": target,
+                "packages": [
+                    {"name": name, "version": version}
+                    for name, version in sorted(listed)
+                ],
+            }
+        )
+    results.sort(key=lambda item: json.dumps(item, sort_keys=True))
+    return {"status": "complete" if complete else "unknown", "results": results}
+
+
+def go_version(value: str) -> tuple[int, int, int] | None:
+    match = GO_VERSION.fullmatch(value)
+    if match is None:
+        return None
+    return int(match[1]), int(match[2]), int(match[3] or 0)
+
+
+def application_version(package_type: str, version: str) -> tuple[int, int, int] | None:
+    """Parse a version only for ecosystems whose scheme is supported."""
+    return go_version(version) if package_type == "golang" else None
+
+
+def application_fixed(package_type: str, version: str, advisories: list[str]) -> bool:
+    """Prove that a version satisfies the scanners' combined fixed versions.
+
+    Each listed release line must reach its highest listed fix. A release line newer than every listed fix is fixed; an older
+    or intermediate line, or anything unparsable, is not.
+    """
+    installed = application_version(package_type, version)
+    if installed is None or not advisories:
+        return False
+    lines: dict[tuple[int, int], tuple[int, int, int]] = {}
+    for advisory in advisories:
+        for entry in advisory.split(","):
+            fixed = application_version(package_type, entry.strip())
+            if fixed is None:
+                return False
+            lines[fixed[:2]] = max(lines.get(fixed[:2], fixed), fixed)
+    line = installed[:2]
+    if line in lines:
+        return installed >= lines[line]
+    return all(line > other for other in lines)
+
+
 def inventory(payload: dict) -> dict:
     """Require an explicit complete OS package list, including source identities."""
     metadata = obj(payload.get("Metadata", {}), "Trivy metadata")
+    applications = application_inventory(payload)
     if metadata.get("OS") is None:
-        return {"status": "unsupported"}
+        unsupported = {"status": "unsupported", "applications": applications}
+        return {**unsupported, "sha256": digest(unsupported)}
     os_data = obj(metadata["OS"], "OS")
     family = text(os_data.get("Family"), "OS family")
     distro = distro_name(family, text(os_data.get("Name"), "OS release"))
@@ -67,6 +164,7 @@ def inventory(payload: dict) -> dict:
         "distro": distro,
         "packages": packages,
         "eosl": os_data.get("EOSL", False),
+        "applications": applications,
     }
     if type(result["eosl"]) is not bool:
         raise ValueError("invalid OS end-of-support status")

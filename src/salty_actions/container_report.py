@@ -18,10 +18,46 @@ from .container_tools import CommandRunner, safe_error
 from .container_tracking import instant
 
 
+def validate_applications(value: object) -> dict:
+    data = obj(value, "application inventory")
+    if set(data) != {"status", "results"} or data["status"] not in {
+        "complete",
+        "unknown",
+    }:
+        raise ValueError("invalid application inventory")
+    for result in rows(data["results"], "application inventory results"):
+        result = obj(result, "application inventory result")
+        if set(result) != {"type", "target", "packages"}:
+            raise ValueError("invalid application inventory result fields")
+        text(result["type"], "application result type")
+        text(result["target"], "application result target")
+        for package in rows(result["packages"], "application packages"):
+            package = obj(package, "application package")
+            if set(package) != {"name", "version"}:
+                raise ValueError("invalid application package fields")
+            text(package["name"], "application package name")
+            if package["version"] != "":
+                text(package["version"], "application package version")
+    return data
+
+
 def validate_inventory(value: object) -> dict:
     data = obj(value, "package inventory")
+    if "applications" in data:
+        validate_applications(data["applications"])
+        if data.get("sha256") != digest(
+            {k: v for k, v in data.items() if k != "sha256"}
+        ):
+            raise ValueError("inventory hash does not match package evidence")
     if data.get("status") in {"unknown", "unsupported"}:
-        return {"status": data["status"]}
+        if "applications" not in data:
+            return {"status": data["status"]}
+        # Language evidence stays usable when OS packages are unavailable.
+        return {
+            "status": data["status"],
+            "applications": data["applications"],
+            "sha256": data["sha256"],
+        }
     if data.get("status") != "complete":
         raise ValueError("invalid inventory status")
     if not isinstance(data.get("distro"), str) or type(data.get("eosl")) is not bool:

@@ -8,7 +8,12 @@ import re
 from datetime import UTC, datetime
 
 from .container_findings import OS_PACKAGE_TYPES, finding, package_purl
-from .container_packages import digest
+from .container_packages import (
+    APPLICATION_TYPES,
+    application_fixed,
+    application_version,
+    digest,
+)
 
 STATE = re.compile(r"<!-- salty-container-tracking:([^\n]+) -->")
 STATUSES = {
@@ -18,6 +23,11 @@ STATUSES = {
     "review": "Not detected. Remediation is unverified; review is required.",
     "resolved": "Fixed package or package removal verified in published images.",
 }
+OS_REASONS = frozenset({"package removed", "vendor fixed version installed"})
+APPLICATION_REASONS = frozenset(
+    {"application package removed", "fixed application version installed"}
+)
+COMPLETE_SCANNERS = {"trivy": "complete", "scout": "complete", "kev": "complete"}
 
 
 def instant(value: str) -> datetime:
@@ -111,7 +121,7 @@ def read_state(body: str) -> dict | None:
     for target in value["affected"]:
         if (
             not isinstance(target, dict)
-            or set(target) != {"name", "platform", "packages"}
+            or set(target) - {"sources"} != {"name", "platform", "packages"}
             or not isinstance(target["name"], str)
             or not isinstance(target["platform"], str)
             or not isinstance(target["packages"], list)
@@ -120,6 +130,15 @@ def read_state(body: str) -> dict | None:
                 or set(p) != {"name", "version"}
                 or not all(isinstance(v, str) for v in p.values())
                 for p in target["packages"]
+            )
+            # Application language results that listed the package; older
+            # states have none and so cannot prove removal.
+            or not isinstance(target.get("sources", []), list)
+            or any(
+                not isinstance(source, dict)
+                or set(source) != {"type", "target"}
+                or not all(isinstance(v, str) for v in source.values())
+                for source in target.get("sources", [])
             )
         ):
             raise ValueError("invalid tracked package baseline")
@@ -148,6 +167,13 @@ def read_state(body: str) -> dict | None:
     if not isinstance(verification, list):
         # Stored JSON validation shares the scanner/report ValueError contract.
         raise ValueError("invalid published remediation evidence")  # noqa: TRY004
+    reasons = (
+        OS_REASONS | APPLICATION_REASONS
+        if group is None
+        else OS_REASONS
+        if group["package_type"] in OS_PACKAGE_TYPES
+        else APPLICATION_REASONS
+    )
     for target in verification:
         if (
             not isinstance(target, dict)
@@ -155,13 +181,18 @@ def read_state(body: str) -> dict | None:
                 isinstance(target.get(k), str)
                 for k in ("name", "platform", "image", "inventory_sha256", "reason")
             )
-            or target["reason"]
-            not in {"package removed", "vendor fixed version installed"}
+            or target["reason"] not in reasons
             or not isinstance(target.get("packages", []), list)
             or any(
                 not isinstance(p, dict)
                 or not all(isinstance(p.get(k), str) for k in ("name", "version"))
                 for p in target.get("packages", [])
+            )
+            # An installed application fix names its packages; removal has none.
+            or (
+                target["reason"] in APPLICATION_REASONS
+                and (target["reason"] == "fixed application version installed")
+                != bool(target.get("packages"))
             )
         ):
             raise ValueError("invalid published remediation evidence")
@@ -177,7 +208,124 @@ def state_comment(state: dict) -> str:
     return "<!-- salty-container-tracking:" + encoded + " -->"
 
 
+def application_name(group: dict) -> str:
+    """The package name Trivy lists for an application finding's PURL identity."""
+    if group["namespace"]:
+        return group["namespace"] + "/" + group["package"]
+    return group["package"]
+
+
+def application_matches(
+    group: dict, inventory: dict
+) -> tuple[list[dict], list[dict]] | None:
+    """Every listed instance of an application finding's package, and the
+    language results (type and target) that list it.
+
+    None means the inventory cannot support a proof: it is incomplete, the
+    ecosystem is unsupported, or another ecosystem lists the same name.
+    Names compare case-insensitively, which can only add instances.
+    """
+    kinds = APPLICATION_TYPES.get(group["package_type"])
+    applications = inventory.get("applications") or {}
+    if kinds is None or applications.get("status") != "complete":
+        return None
+    name = application_name(group).casefold()
+    found, sources = set(), set()
+    for result in applications["results"]:
+        for package in result["packages"]:
+            if package["name"].casefold() != name:
+                continue
+            if result["type"] not in kinds:
+                return None
+            found.add((package["name"], package["version"]))
+            sources.add((result["type"], result["target"]))
+    return (
+        [{"name": n, "version": v} for n, v in sorted(found)],
+        [{"type": t, "target": path} for t, path in sorted(sources)],
+    )
+
+
+def application_packages(group: dict, inventory: dict) -> list[dict] | None:
+    matches = application_matches(group, inventory)
+    return None if matches is None else matches[0]
+
+
+def application_removed(group: dict, affected: dict, inventory: dict) -> bool:
+    """Removal needs the same analysed results, which no longer list the package.
+
+    A binary that Trivy no longer analyses, or a state that recorded no
+    results, would make the package only look absent.
+    """
+    kinds = APPLICATION_TYPES.get(group["package_type"], frozenset())
+    sources = affected.get("sources", [])
+    current = {
+        (result["type"], result["target"]): result
+        for result in inventory["applications"]["results"]
+    }
+    name = application_name(group).casefold()
+    return bool(sources) and all(
+        source["type"] in kinds
+        and (source["type"], source["target"]) in current
+        and not any(
+            package["name"].casefold() == name
+            for package in current[source["type"], source["target"]]["packages"]
+        )
+        for source in sources
+    )
+
+
+def application_baseline(group: dict) -> list[dict]:
+    """Vulnerable application packages, including states with no package list.
+
+    Older states recorded application targets without packages, so the
+    scanner observations supply the affected name and versions.
+    """
+    versions = {group["version"], *(row["version"] for row in group["observations"])}
+    return [{"name": application_name(group), "version": v} for v in sorted(versions)]
+
+
+def application_remediation(group: dict, affected: dict, target: dict) -> dict | None:
+    if target.get("scanners") != COMPLETE_SCANNERS:
+        return None
+    inventory = target.get("inventory", {})
+    current = application_packages(group, inventory)
+    if current is None or not isinstance(inventory.get("sha256"), str):
+        return None
+    evidence = {
+        "name": affected["name"],
+        "platform": affected["platform"],
+        "image": target["image"],
+        "inventory_sha256": inventory["sha256"],
+    }
+    if not current:
+        if not application_removed(group, affected, inventory):
+            return None
+        return {**evidence, "reason": "application package removed"}
+    package_type = group["package_type"]
+    advisories = [group["fix"], *(row["fix"] for row in group["observations"])]
+    baseline = application_baseline(group)
+    # A detected version that the advisories call fixed means the version
+    # scheme or advisory data is inconsistent, so nothing can be proven.
+    if (
+        any(application_version(package_type, p["version"]) is None for p in baseline)
+        or any(
+            application_fixed(package_type, p["version"], advisories) for p in baseline
+        )
+        or not all(
+            application_fixed(package_type, p["version"], advisories) for p in current
+        )
+    ):
+        return None
+    return {
+        **evidence,
+        "reason": "fixed application version installed",
+        "packages": current,
+    }
+
+
 def matching_packages(group: dict, inventory: dict) -> list[dict]:
+    if group["package_type"] not in OS_PACKAGE_TYPES:
+        return application_packages(group, inventory) or []
     if (
         inventory.get("status") != "complete"
         or inventory.get("distro") != group["distro"]
@@ -199,6 +347,12 @@ def remediation(previous: dict, assessment: dict) -> list[dict] | None:
     proof = []
     for affected in previous["affected"]:
         target = targets.get((affected["name"], affected["platform"]))
+        if target is not None and group["package_type"] not in OS_PACKAGE_TYPES:
+            item = application_remediation(group, affected, target)
+            if item is None:
+                return None
+            proof.append(item)
+            continue
         if target is None or not affected["packages"]:
             return None
         inventory = target.get("inventory", {})
@@ -365,6 +519,10 @@ def evolve(
                         {"name": p["name"], "version": p["version"]} for p in packages
                     ],
                 }
+                if packages and group["package_type"] not in OS_PACKAGE_TYPES:
+                    matches = application_matches(group, target["inventory"])
+                    if matches is not None:
+                        known[identity]["sources"] = matches[1]
         state["affected"] = [known[key] for key in sorted(known)]
         if complete and scope:
             state["scope"] = scope

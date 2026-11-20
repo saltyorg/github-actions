@@ -420,11 +420,19 @@ when the service does not expose one. A new download or a fresh SBOM cache is
 not evidence of a new advisory snapshot. Reports older than 24 hours, or dated
 more than five minutes in the future, cannot update issues.
 
-OS-less images have unsupported OS inventory and fix availability. Missing or
-unsupported inventory never establishes package removal. Inventory limitations
-and optional database-metadata failures preserve successfully parsed scanner
-findings and appear separately in `enrichment_errors`; they cannot turn valid
-positive findings into a clean assessment or supply automatic-resolution proof.
+The inventory also lists every Trivy language result by type and target, such
+as each Go binary, with its package names and versions. This language inventory
+has its own completeness status and is covered by the same hash. It is complete
+only when every language result lists its packages. Reports from earlier
+releases have no language inventory; they still validate but cannot prove an
+application fix.
+
+OS-less images have unsupported OS inventory and fix availability, but keep
+their language inventory. Missing, incomplete or unsupported inventory never
+establishes package removal. Inventory limitations and optional
+database-metadata failures preserve successfully parsed scanner findings and
+appear separately in `enrichment_errors`; they cannot turn valid positive
+findings into a clean assessment or supply automatic-resolution proof.
 
 Published Alpine scans check the matching branch's main/community security
 advisories, then refresh the image's configured package repositories in a
@@ -469,12 +477,40 @@ unverified. Automatic closure requires all of the following:
 - Every required variant/platform has complete current scanner coverage. This
   includes every image the issue has recorded as affected, and every image
   assessed when the finding was last detected.
-- Complete published inventories prove removal of the previously identified
-  binary/source package, or changed package versions satisfying Alpine vendor
-  fixed-version evidence. Changing an unrelated image layer is insufficient.
+- For an OS package finding, complete published inventories prove removal of
+  the previously identified binary/source package, or changed package versions
+  satisfying Alpine vendor fixed-version evidence. Changing an unrelated image
+  layer is insufficient.
+- For an application finding, every affected image has complete Trivy, Scout
+  and KEV coverage and a complete language inventory. On each image, every
+  remaining instance of the finding's package satisfies the scanners' fixed
+  versions (`fixed application version installed`), or the package was
+  removed (`application package removed`). Absence of the finding alone is
+  never proof.
 - Two distinct workflow runs assess the same published platform images,
   inventories and scanner configuration, at least six hours apart. Reruns and
   additional scans inside that interval do not count as confirmation.
+
+Application proof is limited to ecosystems with a known package name mapping
+and version scheme: currently Go modules and the Go standard library, listed
+in `gobinary` and `gomod` results. Findings in other ecosystems stay open for
+review. The same package name in another ecosystem's result blocks proof
+rather than being guessed.
+
+Detection records, per affected image, the language results (type and binary
+or manifest path) that listed the package. Removal is proven only when every
+recorded result is still analysed with the same type and no longer lists the
+package, and no other language result lists it. A binary that moved or that
+Trivy no longer analyses only looks removed, so it gives no proof; nor does an
+image without recorded results.
+
+Go versions compare as `MAJOR.MINOR.PATCH`, with or without a leading `v`. The
+fixed versions from every scanner observation, such as Trivy's `1.26.11,
+1.27.4` and Scout's `1.27.4`, combine per release line. A version on a listed
+release line must reach the highest fix listed for that line. A line newer
+than every listed fix counts as fixed; older or intermediate lines do not. Prereleases, pseudo-versions, build metadata, an observation
+without a fixed version, unparsable versions, and a detected version that the
+fixed versions would call fixed all give no proof.
 
 New detection resets confirmation. Incomplete assessments and changes to the
 published images invalidate pending confirmation. A complete partial assessment
@@ -495,6 +531,14 @@ for automatic closure. Existing issues retain their ownership markers and
 identities; a new positive assessment seeds tracking state. A legacy issue absent
 from the first upgraded scan stays open for review. Invalid tracking state stops
 reconciliation instead of creating a duplicate or discarding evidence.
+
+Application issues tracked by earlier releases recorded no affected packages.
+Their package name and detected versions are derived from the stored scanner
+observations, including issues that still carry a legacy distribution
+identity, so they resolve through an installed fixed version. Having no
+recorded language results, they cannot prove removal until detected again. The inventory hash now covers
+the language inventory, so the first upgraded run restarts any pending
+confirmation once.
 
 Upgrade both scan and report actions together using an actual published release.
 The previous reporter cannot consume schema-2 reports. Ensure all reporting
