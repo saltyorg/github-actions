@@ -195,9 +195,10 @@ class RetryCoordinator:
             number = _integer(candidate.get("number"), "pull_request.number")
             pull_request = self.client.get_pull(repository, number)
         elif workflow_run.get("event") == "pull_request":
-            pull_request = resolve_branch_pull(self.client, repository, workflow_run)
-            if pull_request is None:
+            branch_pull = resolve_branch_pull(self.client, repository, workflow_run)
+            if branch_pull is None:
                 return None
+            pull_request = branch_pull
         else:
             return None
 
