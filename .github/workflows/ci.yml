@@ -65,6 +65,7 @@ jobs:
           files: |
             .github/workflows/ci.yml
             .github/workflows/release.yml
+            .github/workflows/runner-images.yml
             tests/actionlint/actions.yml
             tests/actionlint/organization-policy.yml
 
