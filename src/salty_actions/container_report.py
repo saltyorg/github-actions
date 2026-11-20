@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .container_findings import finding, obj, package_purl, rows, text
@@ -208,7 +208,7 @@ def aggregate(
             "scanners": statuses,
         }
         scanned_at = instant(text(report.get("scanned_at"), "scan timestamp"))
-        age = (datetime.now(UTC) - scanned_at).total_seconds()
+        age = (datetime.now(timezone.utc) - scanned_at).total_seconds()
         if age < -300 or age > 86400:
             raise ValueError("scan evidence is stale or dated in the future")
         times.append(scanned_at)

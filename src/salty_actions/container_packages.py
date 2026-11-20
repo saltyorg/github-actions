@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -268,7 +268,7 @@ def assess(
     """Keep enrichment errors separate from scanner and KEV outcomes."""
     result: dict = {
         "status": "unknown",
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
         "errors": [],
         "fixes": {},
         "remediated": [],

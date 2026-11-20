@@ -5,7 +5,7 @@ import math
 import ssl
 import time
 from collections.abc import Callable
-from datetime import UTC
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 from typing import Any
@@ -193,7 +193,7 @@ def _retry_after_seconds(error: HTTPError, now: float) -> float | None:
         except (TypeError, ValueError, OverflowError):
             return None
         if retry_at.tzinfo is None:
-            retry_at = retry_at.replace(tzinfo=UTC)
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
         return max(0, math.ceil(retry_at.timestamp() - now))
     return seconds if seconds >= 0 else None
 

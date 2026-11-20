@@ -5,7 +5,7 @@ import io
 import json
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from email.message import Message
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -17,7 +17,7 @@ from salty_actions.notify import build_notification, send_notification
 from .http_fakes import FakeResponse, RecordingOpener
 from .test_retry import FakeGitHubClient
 
-NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
 
 
 def workflow_event(

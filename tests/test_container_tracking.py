@@ -9,7 +9,7 @@ import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -79,7 +79,9 @@ def report_v2(
     report.update(
         schema=2,
         run_id=run,
-        scanned_at=(datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat(),
+        scanned_at=(
+            datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        ).isoformat(),
         inventory=package_inventory(version, removed=removed),
         provenance={"trivy_version": "v0.74.0"},
         availability={
@@ -216,7 +218,7 @@ class LifecycleTests(unittest.TestCase):
                 }
             elif change == "time":
                 report["scanned_at"] = (
-                    datetime.now(UTC) - timedelta(days=2)
+                    datetime.now(timezone.utc) - timedelta(days=2)
                 ).isoformat()
             else:
                 report["inventory"] = {"status": "unknown"}

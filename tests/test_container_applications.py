@@ -6,7 +6,7 @@ import copy
 import json
 import sys
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -114,7 +114,9 @@ def go_report(run="100", *, hours_ago=18, payload=None, name="base", **options):
     report.update(
         schema=2,
         run_id=run,
-        scanned_at=(datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat(),
+        scanned_at=(
+            datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        ).isoformat(),
         findings=trivy_findings(payload, all_severities=True),
         inventory=inventory(payload),
         provenance={"trivy_version": "v0.74.0"},
@@ -569,7 +571,7 @@ def published_assessment(run, hours_ago, versions):
     return {
         "targets": targets,
         "run_id": run,
-        "at": (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat(),
+        "at": (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat(),
     }
 
 
@@ -650,7 +652,7 @@ class LegacyApplicationStateTests(unittest.TestCase):
 
 class ApplicationProofTests(unittest.TestCase):
     def setUp(self):
-        self.state = legacy_state(datetime.now(UTC).isoformat())
+        self.state = legacy_state(datetime.now(timezone.utc).isoformat())
         self.group = self.state["group"]
         self.affected = self.state["affected"][0]
         self.target = published_assessment(

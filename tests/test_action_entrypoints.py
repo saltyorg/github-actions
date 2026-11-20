@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -138,7 +138,7 @@ class NotifyEntrypointTests(unittest.TestCase):
                 env,
                 github=None,
                 opener=opener,
-                now=datetime(2026, 9, 4, 12, 0, tzinfo=UTC),
+                now=datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc),
             )
 
             sent_payload = json.loads(opener.requests[0].data or b"{}")

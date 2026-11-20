@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 
@@ -60,7 +60,7 @@ def assessment() -> dict:
             }
         ],
         "run_id": "100",
-        "at": datetime.now(UTC).isoformat(),
+        "at": datetime.now(timezone.utc).isoformat(),
     }
 
 

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Self
+from typing import TYPE_CHECKING
 from urllib.request import Request
+
+if TYPE_CHECKING:
+    # typing.Self needs Python 3.11; annotations are never evaluated at runtime.
+    from typing_extensions import Self
 
 
 class FakeResponse:

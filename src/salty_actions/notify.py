@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
@@ -67,7 +67,7 @@ def build_notification(
             {"name": "Result", "value": _truncate(terminal_reason), "inline": True}
         )
 
-    timestamp = now or datetime.now(UTC)
+    timestamp = now or datetime.now(timezone.utc)
     return {
         "embeds": [
             {

@@ -115,6 +115,9 @@ def resolve_branch_pull(
 def _timestamp(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
+    # GitHub writes UTC as "Z", which fromisoformat accepts only from Python 3.11.
+    if value.endswith(("Z", "z")):
+        value = value[:-1] + "+00:00"
     try:
         timestamp = datetime.fromisoformat(value)
     except ValueError:

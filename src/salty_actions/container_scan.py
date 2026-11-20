@@ -6,7 +6,7 @@ import json
 import os
 import re
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -125,7 +125,7 @@ def scan(
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
         "run_id": os.environ.get("GITHUB_RUN_ID", ""),
         "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        "scanned_at": datetime.now(UTC).isoformat(),
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
         "image_id": "",
         "scanners": {},
         "findings": [],

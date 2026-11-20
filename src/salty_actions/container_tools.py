@@ -157,8 +157,12 @@ def install_tool(
             for row in checksums
             if len(row.split()) == 2 and row.split()[1].lstrip("*") == archive_name
         ]
+        digest = hashlib.sha256()
         with archive.open("rb") as stream:
-            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            # hashlib.file_digest is unavailable before Python 3.11.
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        actual = digest.hexdigest()
         if expected != [actual]:
             raise OperationError(f"{name} release checksum does not match")
         destination = directory / binary_name

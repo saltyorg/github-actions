@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from .container_findings import OS_PACKAGE_TYPES, finding, package_purl
 from .container_packages import (
@@ -34,7 +34,7 @@ def instant(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("assessment timestamps require a timezone")
-    return parsed.astimezone(UTC)
+    return parsed.astimezone(timezone.utc)
 
 
 def read_state(body: str) -> dict | None:
@@ -551,7 +551,9 @@ def evolve(
             and tracked_targets(state) <= assessed
         )
         if eligible:
-            age = (datetime.now(UTC) - instant(assessment["at"])).total_seconds()
+            age = (
+                datetime.now(timezone.utc) - instant(assessment["at"])
+            ).total_seconds()
             eligible = 0 <= age <= 86400
         proof = remediation(state, assessment) if eligible else None
         if proof:

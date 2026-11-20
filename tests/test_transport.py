@@ -4,7 +4,7 @@ import io
 import json
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from email.message import Message
 from email.utils import format_datetime
 from pathlib import Path
@@ -98,8 +98,8 @@ class GitHubTransportTests(unittest.TestCase):
         self.assertEqual(sleeps, [3600])
 
     def test_http_date_retry_after_uses_injected_clock(self) -> None:
-        now = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
-        retry_at = datetime(2026, 9, 4, 12, 2, tzinfo=UTC)
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        retry_at = datetime(2026, 9, 4, 12, 2, tzinfo=timezone.utc)
         opener = RecordingOpener(
             [
                 http_error(429, headers={"Retry-After": format_datetime(retry_at)}),

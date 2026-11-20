@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import unittest
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
@@ -111,7 +111,7 @@ def scan_report(*, clean=False, complete=True, kind="published"):
         "image_id": IMAGE_ID,
         "run_id": "123",
         "run_attempt": "1",
-        "scanned_at": datetime.now(UTC).isoformat(),
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
         "scanners": {"trivy": "complete", "scout": "complete", "kev": "complete"}
         if complete
         else {"trivy": "error", "scout": "complete", "kev": "complete"},
