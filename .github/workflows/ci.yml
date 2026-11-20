@@ -37,6 +37,45 @@ jobs:
           SALTY_ACTIONS_DOCKER_TEST: '1'
         run: python3 -m unittest tests.test_container_platforms -v
 
+  # The oldest and newest supported Python releases.
+  python-bounds:
+    name: python-bounds (${{ matrix.python }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python:
+          - '3.11'
+          - '3.15'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Record Python version
+        run: python3 -VV
+
+      - name: Run unit tests with warnings as errors
+        env:
+          PYTHONWARNINGS: error
+          PYTHONDEVMODE: '1'
+        run: |
+          set -o pipefail
+          python3 -W error -X dev -m unittest discover -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          # Leaks found during garbage collection are reported, not raised.
+          if grep -nE 'Exception ignored|[A-Za-z]+Warning: ' "$RUNNER_TEMP/unittest.log"; then
+            echo "::error::Python reported warnings or unraisable exceptions"
+            exit 1
+          fi
+
+      - name: Compile Python modules with warnings as errors
+        run: python3 -W error -X dev -m compileall -q -f src tests
+
   test:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -46,11 +85,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run unit tests
-        run: python3 -m unittest discover -v
+      # The actions run on the runner's own python3, so it is tested as well
+      # as the supported bounds below.
+      - name: Record Python version
+        run: python3 -VV
 
-      - name: Compile Python modules
-        run: python3 -m compileall -q src
+      - name: Run unit tests with warnings as errors
+        env:
+          PYTHONWARNINGS: error
+          PYTHONDEVMODE: '1'
+        run: |
+          set -o pipefail
+          python3 -W error -X dev -m unittest discover -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          # Leaks found during garbage collection are reported, not raised.
+          if grep -nE 'Exception ignored|[A-Za-z]+Warning: ' "$RUNNER_TEMP/unittest.log"; then
+            echo "::error::Python reported warnings or unraisable exceptions"
+            exit 1
+          fi
+
+      - name: Compile Python modules with warnings as errors
+        run: python3 -W error -X dev -m compileall -q -f src tests
 
       - name: Check Bash syntax
         run: |
