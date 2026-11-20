@@ -178,6 +178,34 @@ class LanguageIssueMigrationTests(unittest.TestCase):
                             assessment=current,
                         )
 
+    def test_automation_resolved_legacy_issue_does_not_block_a_new_app_issue(self):
+        group = language_group()
+        existing = legacy_language_issue("debian/13.7")
+        existing["state"] = "closed"
+        existing["body"] = managed_body(
+            "containers", language_group("debian/13.7"), resolved=True
+        )
+
+        def plan(bot_closed: bool) -> list[dict]:
+            client = FakeIssueClient([existing])
+            client.bot_closed = bot_closed
+            return plan_issues(
+                "containers",
+                {group["key"]: group},
+                [existing],
+                complete=True,
+                client=client,
+                assessment=assessment(),
+            )
+
+        self.assertEqual(
+            [(action["operation"], action["number"]) for action in plan(True)],
+            [("create", None)],
+        )
+        # A human closure remains an explicit opt-out that needs reconciliation.
+        with self.assertRaisesRegex(ValueError, "manual reconciliation"):
+            plan(False)
+
     def test_legacy_review_state_without_a_baseline_does_not_bypass_ambiguity_guard(
         self,
     ):

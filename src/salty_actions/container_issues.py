@@ -449,7 +449,12 @@ def plan_issues(
                         "ambiguous legacy issue identities require manual reconciliation"
                     )
                 key = next(iter(matches))
-            elif key not in groups:
+            elif key not in groups and not (
+                # Verified automated resolution is final; recurrence is a new issue.
+                issue.get("state") == "closed"
+                and marker["resolved"]
+                and client.closed_by_automation(issue["number"])
+            ):
                 unmatched_legacy.add(issue["number"])
             if key in owned:
                 raise ValueError(

@@ -364,7 +364,9 @@ identity without changing their issue number, human notes or manual-closure
 policy. Older issues without tracking state require an exact prior identity
 hash matched against complete current distribution inventories. Ambiguous
 legacy ownership stops reconciliation for manual review rather than creating
-another application issue.
+another application issue. Legacy issues that automation closed after verified
+resolution are final and never block new application issues; a human closure
+still does.
 
 `dry-run` defaults to `true`, requires Issues read access, and performs no writes.
 Activation with `dry-run: 'false'` requires the caller's repository-scoped
