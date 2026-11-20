@@ -47,6 +47,16 @@
             "minimumReleaseAge": "3 days"
         },
         {
+            "description": "Digest pins keep the current release and have no release timestamp, so a release age would block them forever",
+            "matchManagers": [
+                "github-actions"
+            ],
+            "matchUpdateTypes": [
+                "pinDigest"
+            ],
+            "minimumReleaseAge": "0 days"
+        },
+        {
             "description": "Scanner versions change security results and CI does not run them; review manually",
             "matchDepNames": [
                 "aquasecurity/trivy",
