@@ -557,9 +557,11 @@ qBittorrent and Autoscan while preserving each repository's complete target set.
 Release tags are immutable semantic versions.
 
 Pushing a `v*` tag runs the full quality gate and publishes a GitHub Release
-with generated release notes. An explicitly authorized release is complete
-only after the agreed commit passes required validation, the agreed tag is
-pushed, and its remote target and successful release publication are verified.
+whose notes list every non-merge commit since the previous `vX.Y.Z` tag,
+grouped by Conventional Commit type (`python3 -m salty_actions.release_notes`).
+An explicitly authorized release is complete only after the agreed commit
+passes required validation, the agreed tag is pushed, and its remote target and
+successful release publication are verified.
 A local tag, a commit on `main`, or a planned version is not a published release.
 
 `retry` and `notify` form one workflow-result suite and are released together.

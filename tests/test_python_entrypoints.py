@@ -1,14 +1,16 @@
 """Run every module and action command on the interpreter running the tests.
 
 The actions execute on the runner's own ``python3``. These checks start each
-module and each action's packaged ``run:`` command in a fresh interpreter with
-warnings as errors and development mode, so an import-time deprecation, a
-syntax feature newer than the supported floor or a leaked resource fails here.
+module, each action's packaged ``run:`` command and each module a workflow
+runs in a fresh interpreter with warnings as errors and development mode, so
+an import-time deprecation, a syntax feature newer than the supported floor or
+a leaked resource fails here.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -29,6 +31,26 @@ ACTION_FAILURES = {
     "notify": (1, "::error::Discord notification failed"),
     "retry": (1, "::error::Retry orchestration failed"),
 }
+
+# Each module a workflow step runs, given arguments that reach its own error
+# handling without network access or a release tag in the working directory.
+WORKFLOW_MODULES = {
+    "release_notes": (
+        ["--tag", "v0.0.0", "--repository", "example/actions"],
+        2,
+        "::error::Release notes failed",
+    ),
+    "runner_images": (["missing-README.md"], 2, "::error::Runner discovery failed"),
+}
+WORKFLOW_MODULE = re.compile(r"python3 -m salty_actions\.([a-z_]+)")
+
+
+def workflow_modules() -> set[str]:
+    return {
+        module
+        for workflow in ROOT.glob(".github/workflows/*.yml")
+        for module in WORKFLOW_MODULE.findall(workflow.read_text(encoding="utf-8"))
+    }
 
 
 def python_actions() -> dict[str, str]:
@@ -97,6 +119,36 @@ class ActionCommandTests(unittest.TestCase):
                     ["/bin/bash", "-c", command],
                     cwd=cwd,
                     env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertIn(message, result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertNotIn("Warning", result.stderr)
+
+    def test_every_workflow_module_has_an_expected_outcome(self) -> None:
+        self.assertEqual(sorted(workflow_modules()), sorted(WORKFLOW_MODULES))
+
+    def test_workflow_modules_run_on_this_interpreter(self) -> None:
+        for module, (arguments, status, message) in WORKFLOW_MODULES.items():
+            with self.subTest(module=module), tempfile.TemporaryDirectory() as cwd:
+                # The interpreter is this test's own and the module and its
+                # arguments are fixed above.
+                result = subprocess.run(  # nosec B603
+                    [
+                        sys.executable,
+                        "-W",
+                        "error",
+                        "-X",
+                        "dev",
+                        "-m",
+                        f"salty_actions.{module}",
+                        *arguments,
+                    ],
+                    cwd=cwd,
+                    env={**os.environ, **STRICT_ENV, "PYTHONPATH": str(SOURCE)},
                     capture_output=True,
                     text=True,
                     check=False,
